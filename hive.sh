@@ -74,6 +74,38 @@ case "${1:-}" in
         sleep infinity
         ;;
 
+    passive)
+        _cleanup
+        _build
+        _launch_c2
+        _launch_dashboard
+        _banner "PASSIVE (recon only)"
+        echo -e "${CYAN}Passive mode: Worker + Guardian only. No attacks.${NC}"
+        echo -e "${CYAN}Maps network, discovers hosts, generates ATT&CK report.${NC}"
+        sed -i "s/aggressive = true/aggressive = false/" hive.toml 2>/dev/null || true
+        cargo run -p buzz &
+        wait $! 2>/dev/null || true
+        ;;
+
+    colony)
+        _cleanup
+        if ! grep -q "aggressive = true" hive.toml 2>/dev/null; then
+            echo -e "${YELLOW}Enabling colony aggressive mode...${NC}"
+            sed -i "s/aggressive = false/aggressive = true/" hive.toml 2>/dev/null || true
+        fi
+        _build
+        _launch_c2
+        _launch_dashboard
+        _banner "COLONY (aggressive)"
+        echo -e "${RED}AGENTS + SWARM: attacking all reachable hosts${NC}"
+        echo -e "${RED}Safe IPs protected: $(grep -A5 "[brain]" hive.toml | grep safe_ips -A10 | grep """ | tr "
+" " " 2>/dev/null)${NC}"
+        echo ""
+        cargo run -p buzz &
+        SWARM_PID=$!
+        wait $SWARM_PID 2>/dev/null || true
+        ;;
+
     colony)
         _cleanup
         # Enable aggressive mode in config
@@ -159,6 +191,7 @@ case "${1:-}" in
         echo ""
         echo -e "${BOLD}Operating modes:${NC}"
         echo "  brain     C2 + dashboard only (safe, no agents)"
+  passive   C2 + dashboard + recon only (no attacks)
         echo "  colony    C2 + dashboard + AGGRESSIVE agents + swarm"
         echo "  deploy    Deploy stinger to remote victim via SCP/SSH"
         echo ""

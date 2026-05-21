@@ -28,6 +28,14 @@ pub mod royal_jelly;
 pub mod waggle_dance;
 pub mod pheromone;
 pub mod swarming;
+pub mod hades_gate;
+pub mod leech;
+pub mod smoke_signals;
+pub mod death_dance;
+pub mod reactive_llm;
+pub mod stigmergy;
+pub mod hibernation;
+pub mod channel_rotator;
 
 pub use comms::HiveChamber;
 pub use identity::AgentIdentity;
