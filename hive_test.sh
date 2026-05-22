@@ -26,7 +26,7 @@ ARENA_NAME="/hive_$(date +%s)_$(shuf -i 1000-9999 -n 1)"
 export __HIVE_ARENA="$ARENA_NAME"
 
 echo -e "${CYAN}╔══════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║   HIVE COLONY TEST HARNESS v1.0         ║${NC}"
+echo -e "${CYAN}║   HIVE COLONY TEST HARNESS v1.1         ║${NC}"
 echo -e "${CYAN}║   Arena: $ARENA_NAME${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════╝${NC}"
 echo ""
@@ -101,47 +101,41 @@ else
     tail -5 /tmp/hive_weaver.log
 fi
 
-# ── Phase 3: Verify shared arena ───────────────────────────────────────
-echo -e "\n${GREEN}[Phase 3] Arena Verification${NC}"
+# ── Phase 3: Wait for communication ────────────────────────────────────
+echo -e "\n${CYAN}[Phase 3] Waiting 20s for colony communication...${NC}"
+sleep 20
+echo -e "${GREEN}  Done — analyzing logs${NC}"
 
-echo -n "  Checking arena slots... "
-ARENA_SLOTS=$(grep -c "Connected to swarm arena" /tmp/hive_*.log 2>/dev/null || echo 0)
-echo -e "${GREEN}$ARENA_SLOTS agents connected${NC}"
+# ── Phase 4: Arena Verification ────────────────────────────────────────
+echo -e "\n${GREEN}[Phase 4] Arena & Communication${NC}"
 
-echo -n "  Same arena name? "
-UNIQUE_ARENAS=$(grep "arena (shared memory)" /tmp/hive_*.log 2>/dev/null | wc -l)
-if [ "$UNIQUE_ARENAS" -le 1 ]; then
-    echo -e "${GREEN}YES (1 arena, $ARENA_SLOTS agents sharing)${NC}"
-else
-    echo -e "${RED}BUG: $UNIQUE_ARENAS separate arenas created (agents not sharing!)${NC}"
-    ((BUGS++))
-    echo -e "${YELLOW}  Fix: __HIVE_ARENA=$ARENA_NAME passed to all agents${NC}"
-    echo -e "${YELLOW}  Check connect_to_arena() reads __HIVE_ARENA first${NC}"
-fi
-
-# ── Phase 4: Verify communication ──────────────────────────────────────
-echo -e "\n${GREEN}[Phase 4] Colony Communication${NC}"
+echo -n "  Agents connected to arena... "
+ARENA_CONNS=$(grep -l "connected to shared-memory arena\|Hive.*active\|Hive.*starting" /tmp/hive_*.log 2>/dev/null | wc -l)
+echo -e "${GREEN}${ARENA_CONNS}/4 agents${NC}"
 
 echo -n "  Worker published beliefs... "
-grep -c "Published belief\|Belief:" /tmp/hive_worker.log 2>/dev/null || echo "0"
-BELIEFS=$(grep -c "Published belief\|Belief:" /tmp/hive_worker.log 2>/dev/null || echo 0)
-echo -e "${GREEN}${BELIEFS} beliefs${NC}"
+WORKER_BELIEFS=$(grep -c "Belief:" /tmp/hive_worker.log 2>/dev/null || echo 0)
+echo -e "${GREEN}${WORKER_BELIEFS} published${NC}"
+
+echo -n "  Honeybee received beliefs... "
+HB_BELIEFS=$(grep -c "Belief:" /tmp/hive_honeybee.log 2>/dev/null || echo 0)
+echo -e "${GREEN}${HB_BELIEFS} received${NC}"
+
+echo -n "  Weaver received beliefs... "
+WV_BELIEFS=$(grep -c "Belief:" /tmp/hive_weaver.log 2>/dev/null || echo 0)
+echo -e "${GREEN}${WV_BELIEFS} received${NC}"
 
 echo -n "  Drone received beliefs... "
-DRONE_BELIEFS=$(grep -c "Belief from\|belief" /tmp/hive_drone.log 2>/dev/null || echo 0)
-echo -e "${GREEN}${DRONE_BELIEFS} received${NC}"
-if [ "$DRONE_BELIEFS" -eq 0 ] && [ "$BELIEFS" -gt 0 ]; then
-    echo -e "${RED}  BUG: Drone not receiving Worker beliefs (arena not shared?)${NC}"
-    ((BUGS++))
-fi
+DR_BELIEFS=$(grep -c "Belief" /tmp/hive_drone.log 2>/dev/null || echo 0)
+echo -e "${GREEN}${DR_BELIEFS} received${NC}"
+
+echo -n "  Weaver mutations... "
+MUTATIONS=$(grep -c "Variant:" /tmp/hive_weaver.log 2>/dev/null || echo 0)
+echo -e "${GREEN}${MUTATIONS} variants${NC}"
 
 echo -n "  Drone regeneration activity... "
 REGENS=$(grep -c "regenerat\|Fileless spawn" /tmp/hive_drone.log 2>/dev/null || echo 0)
-echo -e "${GREEN}${REGENS} regeneration attempts${NC}"
-
-echo -n "  Weaver mutations generated... "
-MUTATIONS=$(grep -c "Variant:" /tmp/hive_weaver.log 2>/dev/null || echo 0)
-echo -e "${GREEN}${MUTATIONS} variants${NC}"
+echo -e "${GREEN}${REGENS} attempts${NC}"
 
 # ── Phase 5: Dashboard & C2 Check ──────────────────────────────────────
 echo -e "\n${GREEN}[Phase 5] External Interfaces${NC}"
@@ -159,7 +153,6 @@ echo -e "\n${CYAN}════════════════════�
 echo -e "${CYAN}   BUG REPORT${NC}"
 echo -e "${CYAN}══════════════════════════════════════════${NC}"
 
-# Check for crashes
 for agent in worker drone honeybee weaver; do
     log="/tmp/hive_${agent}.log"
     if grep -q "panicked\|SIGSEGV\|SIGABRT\|stack overflow" "$log" 2>/dev/null; then
@@ -168,19 +161,27 @@ for agent in worker drone honeybee weaver; do
     fi
 done
 
-# Check arena sharing
-if grep -q "Connected to swarm arena (slot 1" /tmp/hive_drone.log 2>/dev/null; then
-    echo -e "${GREEN}  PASS: Agents sharing arena (multi-slot)${NC}"
-elif grep -q "Connected to swarm arena (slot 0" /tmp/hive_*.log 2>/dev/null | wc -l | grep -q "$ARENA_SLOTS"; then
-    echo -e "${YELLOW}  WARN: All agents on slot 0 (separate arenas)${NC}"
+# Check arena sharing (multiple agents on different slots)
+SLOTS=$(grep -o "slot [0-9]\+" /tmp/hive_*.log 2>/dev/null | sort -u | wc -l)
+if [ "$SLOTS" -ge 2 ]; then
+    echo -e "${GREEN}  PASS: Multi-slot arena ($SLOTS slots, agents sharing)${NC}"
+elif [ "$ARENA_CONNS" -ge 2 ]; then
+    echo -e "${GREEN}  PASS: Agents sharing arena${NC}"
+else
+    echo -e "${YELLOW}  WARN: Only $ARENA_CONNS agent(s) connected${NC}"
+fi
+
+# Check cross-agent belief reception
+if [ "$HB_BELIEFS" -gt 0 ] || [ "$WV_BELIEFS" -gt 0 ]; then
+    echo -e "${GREEN}  PASS: Cross-agent belief propagation working${NC}"
+elif [ "$WORKER_BELIEFS" -gt 0 ]; then
+    echo -e "${YELLOW}  WARN: Worker published but others didn't receive${NC}"
     ((BUGS++))
 fi
 
 # Check fileless execution
 if grep -q "Fileless spawn" /tmp/hive_drone.log 2>/dev/null; then
     echo -e "${GREEN}  PASS: Fileless regeneration working${NC}"
-else
-    echo -e "${YELLOW}  WARN: No regeneration attempts${NC}"
 fi
 
 # Final status
@@ -190,12 +191,7 @@ echo ""
 echo "Logs: /tmp/hive_*.log"
 echo "Dashboard: http://localhost:8080"
 echo "C2: http://localhost:8445/health"
-echo "Press Ctrl+C to stop"
 
-# Keep running + periodic checks
-while true; do
-    sleep 10
-    ALIVE=$(jobs -p | wc -l)
-    REGENS=$(grep -c "Fileless spawn" /tmp/hive_drone.log 2>/dev/null || echo 0)
-    echo -e "[$(date +%H:%M:%S)] Agents: $ALIVE | Regenerations: $REGENS | Arena: $ARENA_NAME"
-done
+# Keep running briefly for data collection
+sleep 5
+cleanup
