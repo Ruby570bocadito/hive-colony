@@ -3,7 +3,7 @@ use std::time::Duration;
 use tokio::time;
 use tracing::{info, warn};
 
-const SCOUT_MODEL_ENC: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/scout_classifier.onnx.enc"));
+const SCOUT_MODEL_ENC: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/scout_model.enc"));
 
 fn load_scout_model() -> Vec<u8> {
     let seed = b"SWARM_SCOUT_ONNX_V1_X7k2Mp9Q_n3R4sT8v";
@@ -11,12 +11,11 @@ fn load_scout_model() -> Vec<u8> {
         .expect("Failed to decrypt scout model")
 }
 
-fn onnx_classify_inner(onnx_bytes: &[u8], features: &[f32; 14]) -> Option<i64> {
-    use ndarray::Array2;
-    let mut model = hive_base::ml::OnnxModel::new(onnx_bytes).ok()?;
-    let input = Array2::from_shape_vec((1, 14), features.to_vec()).ok()?;
-    let result = model.predict_i64(input).ok()?;
-    result.first().copied()
+fn onnx_classify_inner(_onnx_bytes: &[u8], features: &[f32; 14]) -> Option<i64> {
+    // Pure Rust RandomForest evaluator — no ONNX Runtime needed
+    let rf = hive_base::ml::RandomForest::from_binary(_onnx_bytes)?;
+    let class = rf.predict(features)?;
+    Some(class as i64)
 }
 
 fn onnx_classify(onnx_bytes: &[u8], features: &[f32; 14]) -> Option<i64> {
@@ -25,7 +24,7 @@ fn onnx_classify(onnx_bytes: &[u8], features: &[f32; 14]) -> Option<i64> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
         onnx_classify_inner(&bytes, &feats)
     })).unwrap_or_else(|_| {
-        tracing::warn!("ONNX classifier panicked, falling back to heuristics");
+        tracing::warn!("Forest classifier failed, falling back to heuristics");
         None
     })
 }
@@ -105,13 +104,15 @@ impl ScoutAgent {
             .expect("Failed to connect to colmena arena");
 
         let onnx_model = load_scout_model();
-        info!("Worker: ONNX model loaded ({} bytes)", onnx_model.len());
+        let cfg = hive_base::config::HiveConfig::load();
+        info!("Worker: Forest model loaded ({} bytes) | scan:{}s heartbeat:{}s",
+            onnx_model.len(), cfg.timing.scan_interval_secs, cfg.timing.heartbeat_interval_secs);
 
         Self {
-            comms, identity, consensus: ConsensusEngine::new(0.66),
+            comms, identity, consensus: ConsensusEngine::new(cfg.consensus.threshold),
             onnx_model,
-            scan_interval: Duration::from_secs(15),
-            heartbeat_interval: Duration::from_secs(10),
+            scan_interval: Duration::from_secs(cfg.timing.scan_interval_secs),
+            heartbeat_interval: Duration::from_secs(cfg.timing.heartbeat_interval_secs),
         }
     }
 
@@ -136,7 +137,7 @@ impl ScoutAgent {
                 (edr_process_found(&pl), backup_process_found(&pl), 0.70)
             }
         };
-        info!("ONNX classifier: class={:?} -> edr={} backup={}", classification, is_edr, is_backup);
+        info!("Forest classifier: class={:?} -> edr={} backup={}", classification, is_edr, is_backup);
 
         beliefs.push(("edr_present".into(), Value::Bool(is_edr), ml_conf));
         beliefs.push(("backup_present".into(), Value::Bool(is_backup), 0.90));
@@ -149,6 +150,7 @@ impl ScoutAgent {
     async fn publish_beliefs(&self, beliefs: &[(String, Value, f32)]) {
         for (asset, value, confidence) in beliefs {
             let msg = Message::belief(self.identity.id(), Role::Worker, asset.clone(), value.clone(), *confidence);
+            info!("Belief: {} = {:?} ({})", asset, value, confidence);
             self.comms.publish(msg).await;
         }
     }
@@ -183,7 +185,7 @@ impl ScoutAgent {
     }
 
     async fn run(&mut self) {
-        info!("Hive Worker starting | ID: {} | ONNX model active", self.identity.id());
+        info!("Hive Worker starting | ID: {} | Forest model active", self.identity.id());
         self.send_heartbeat().await;
 
         let mut hb = time::interval(self.heartbeat_interval);

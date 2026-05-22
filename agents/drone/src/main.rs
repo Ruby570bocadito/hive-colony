@@ -28,6 +28,12 @@ impl DroneAgent {
 
         info!("Hive Drone active | ID: {} | decision_interval: {}s", identity.id(), cfg.agents.shaper_decision_interval_secs);
 
+        // Recover tactical knowledge from stigmergy trails (survives arena restart)
+        let knowledge = hive_base::stigmergy::recover_knowledge();
+        if !knowledge.is_empty() {
+            info!("Drone: recovered {} tactical items from trails", knowledge.len());
+        }
+
         Self {
             comms, identity,
             consensus: ConsensusEngine::new(0.66),

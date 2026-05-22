@@ -3,7 +3,6 @@ pub mod identity;
 pub mod ldc;
 pub mod consensus;
 pub mod utils;
-#[cfg(feature = "ml")]
 pub mod ml;
 pub mod shared_arena;
 pub mod arena_mgr;

