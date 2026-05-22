@@ -264,3 +264,39 @@ pub fn arena_size() -> usize {
     let sz = arena_layout_size();
     (sz + 4095) & !4095
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem;
+
+    #[test]
+    fn test_arena_constants() {
+        assert!(MAX_AGENTS >= 8);
+        assert!(MAX_MESSAGES >= 512);
+        assert!(MAX_MSG_SIZE >= 4096);
+        assert!(HEARTBEAT_TIMEOUT_SECS >= 10);
+    }
+
+    #[test]
+    fn test_arena_magic() {
+        assert_eq!(&ARENA_MAGIC, b"SWRM\x01\x00\x00\x00");
+    }
+
+    #[test]
+    fn test_header_size_alignment() {
+        assert_eq!(mem::size_of::<ArenaHeader>() % 64, 0, "Header must be cache-line aligned");
+    }
+
+    #[test]
+    fn test_agent_slot_size() {
+        let sz = mem::size_of::<AgentSlot>();
+        assert!(sz >= 64, "Agent slot too small: {}", sz);
+    }
+
+    #[test]
+    fn test_message_slot_size() {
+        let sz = mem::size_of::<MessageSlot>();
+        assert!(sz >= MAX_MSG_SIZE, "Message slot too small for max message");
+    }
+}
