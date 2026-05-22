@@ -187,3 +187,140 @@ impl Message {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    fn test_agent() -> (Uuid, Role) {
+        (Uuid::new_v4(), Role::Worker)
+    }
+
+    #[test]
+    fn test_heartbeat_message() {
+        let (id, role) = test_agent();
+        let msg = Message::heartbeat(id, role.clone());
+        assert_eq!(msg.agent_id, id);
+        assert_eq!(msg.agent_role, role);
+        assert!(matches!(msg.payload, Payload::Heartbeat));
+        assert!(msg.timestamp > 0);
+    }
+
+    #[test]
+    fn test_belief_message() {
+        let (id, role) = test_agent();
+        let msg = Message::belief(id, role.clone(), "edr".into(), Value::Bool(true), 0.95);
+        assert_eq!(msg.agent_id, id);
+        assert_eq!(msg.agent_role, role);
+        match &msg.payload {
+            Payload::Belief { asset, value, confidence } => {
+                assert_eq!(asset, "edr");
+                assert!(matches!(value, Value::Bool(true)));
+                assert_eq!(*confidence, 0.95);
+            }
+            _ => panic!("Expected Belief payload"),
+        }
+    }
+
+    #[test]
+    fn test_proposal_message() {
+        let (id, role) = test_agent();
+        let (msg, proposal_id) = Message::proposal(id, role.clone(), "encrypt".into(), "target secured".into());
+        assert_eq!(msg.agent_id, id);
+        match &msg.payload {
+            Payload::Proposal { action, argument, proposal_id: pid } => {
+                assert_eq!(action, "encrypt");
+                assert_eq!(argument, "target secured");
+                assert_eq!(*pid, proposal_id);
+            }
+            _ => panic!("Expected Proposal payload"),
+        }
+    }
+
+    #[test]
+    fn test_vote_message() {
+        let (id, role) = test_agent();
+        let proposal_id = Uuid::new_v4();
+        let msg = Message::vote(id, role.clone(), proposal_id, Decision::Support, 1.5);
+        match &msg.payload {
+            Payload::Vote { proposal_id: pid, decision, weight } => {
+                assert_eq!(*pid, proposal_id);
+                assert!(matches!(decision, Decision::Support));
+                assert_eq!(*weight, 1.5);
+            }
+            _ => panic!("Expected Vote payload"),
+        }
+    }
+
+    #[test]
+    fn test_status_event_message() {
+        let (id, role) = test_agent();
+        let subject = Uuid::new_v4();
+        let msg = Message::status_event(id, role.clone(), "agent_dead", subject, Role::Worker, "no heartbeat");
+        match &msg.payload {
+            Payload::StatusEvent { event_type, subject_id, subject_role, detail } => {
+                assert_eq!(event_type, "agent_dead");
+                assert_eq!(*subject_id, subject);
+                assert!(matches!(subject_role, Role::Worker));
+                assert_eq!(detail, "no heartbeat");
+            }
+            _ => panic!("Expected StatusEvent payload"),
+        }
+    }
+
+    #[test]
+    fn test_messagepack_roundtrip() {
+        let (id, role) = test_agent();
+        let original = Message::belief(id, role, "os_type".into(), Value::String("linux".into()), 1.0);
+        
+        let bytes = rmp_serde::to_vec(&original).expect("Serialize failed");
+        let restored: Message = rmp_serde::from_slice(&bytes).expect("Deserialize failed");
+        
+        assert_eq!(original.agent_id, restored.agent_id);
+        assert_eq!(original.agent_role, restored.agent_role);
+        assert_eq!(original.timestamp, restored.timestamp);
+        match (&original.payload, &restored.payload) {
+            (Payload::Belief { asset: a1, value: v1, confidence: c1 },
+             Payload::Belief { asset: a2, value: v2, confidence: c2 }) => {
+                assert_eq!(a1, a2);
+                assert!(matches!((v1, v2), (Value::String(s1), Value::String(s2)) if s1 == s2));
+                assert_eq!(c1, c2);
+            }
+            _ => panic!("Payload mismatch"),
+        }
+    }
+
+    #[test]
+    fn test_all_belief_value_types() {
+        let (id, role) = test_agent();
+        
+        let msg_bool = Message::belief(id, role.clone(), "a".into(), Value::Bool(true), 1.0);
+        let msg_str = Message::belief(id, role.clone(), "b".into(), Value::String("hi".into()), 1.0);
+        let msg_int = Message::belief(id, role.clone(), "c".into(), Value::Int(42), 1.0);
+        let msg_float = Message::belief(id, role.clone(), "d".into(), Value::Float(3.14), 1.0);
+
+        for msg in &[msg_bool, msg_str, msg_int, msg_float] {
+            let bytes = rmp_serde::to_vec(msg).expect("serialize");
+            let _: Message = rmp_serde::from_slice(&bytes).expect("deserialize");
+        }
+    }
+
+    #[test]
+    fn test_role_display() {
+        assert_eq!(format!("{}", Role::Worker), "worker");
+        assert_eq!(format!("{}", Role::Drone), "drone");
+        assert_eq!(format!("{}", Role::Honeybee), "honeybee");
+        assert_eq!(format!("{}", Role::Weaver), "weaver");
+        assert_eq!(format!("{}", Role::Queen), "queen");
+        assert_eq!(format!("{}", Role::Swarm), "swarm");
+    }
+
+    #[test]
+    fn test_multiple_proposals_unique_ids() {
+        let (id, role) = test_agent();
+        let (_, p1) = Message::proposal(id, role.clone(), "a".into(), "arg".into());
+        let (_, p2) = Message::proposal(id, role.clone(), "b".into(), "arg".into());
+        assert_ne!(p1, p2, "Proposal IDs must be unique");
+    }
+}

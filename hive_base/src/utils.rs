@@ -43,3 +43,45 @@ pub fn random_delay(min_secs: u64, max_secs: u64) -> u64 {
     rng.gen_range(min_secs..=max_secs)
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_timestamp_now_is_recent() {
+        let ts = timestamp_now();
+        // Should be after 2024
+        assert!(ts > 1700000000, "Timestamp should be after 2024");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        // Should be within last 5 seconds
+        assert!(now - ts <= 5, "Timestamp should be current");
+        assert!(ts <= now, "Timestamp should not be in the future");
+    }
+
+    #[test]
+    fn test_random_delay_range() {
+        for _ in 0..100 {
+            let delay = random_delay(1, 10);
+            assert!(delay >= 1, "delay too small: {}", delay);
+            assert!(delay <= 10, "delay too large: {}", delay);
+        }
+    }
+
+    #[test]
+    fn test_random_delay_same_min_max() {
+        let delay = random_delay(5, 5);
+        assert_eq!(delay, 5);
+    }
+
+    #[test]
+    fn test_timestamp_monotonic() {
+        let ts1 = timestamp_now();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let ts2 = timestamp_now();
+        assert!(ts2 >= ts1, "Timestamp should be monotonic");
+    }
+}

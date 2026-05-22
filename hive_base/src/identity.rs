@@ -60,3 +60,90 @@ impl Default for AgentIdentity {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_identity_creation() {
+        let id = AgentIdentity::new();
+        assert_ne!(id.id(), Uuid::nil());
+        assert_eq!(id.verifying_key_bytes().len(), 32);
+    }
+
+    #[test]
+    fn test_sign_and_verify() {
+        let id = AgentIdentity::new();
+        let data = b"swarm test message";
+        let sig = id.sign_data(data);
+        assert!(id.verify(data, &sig));
+    }
+
+    #[test]
+    fn test_wrong_signature_fails() {
+        let id = AgentIdentity::new();
+        let data = b"real message";
+        let sig = id.sign_data(data);
+        let wrong_data = b"tampered message";
+        assert!(!id.verify(wrong_data, &sig));
+    }
+
+    #[test]
+    fn test_wrong_key_fails() {
+        let alice = AgentIdentity::new();
+        let bob = AgentIdentity::new();
+        let data = b"alice message";
+        let sig = alice.sign_data(data);
+        assert!(!bob.verify(data, &sig));
+    }
+
+    #[test]
+    fn test_verify_with_key() {
+        let id = AgentIdentity::new();
+        let data = b"public verify test";
+        let sig = id.sign_data(data);
+        let vk = id.verifying_key_bytes();
+        assert!(AgentIdentity::verify_with_key(&vk, data, &sig));
+    }
+
+    #[test]
+    fn test_verify_with_key_invalid_key() {
+        let id = AgentIdentity::new();
+        let data = b"test";
+        let sig = id.sign_data(data);
+        let bad_key = [0u8; 32];
+        assert!(!AgentIdentity::verify_with_key(&bad_key, data, &sig));
+    }
+
+    #[test]
+    fn test_unique_ids() {
+        let a = AgentIdentity::new();
+        let b = AgentIdentity::new();
+        assert_ne!(a.id(), b.id());
+        assert_ne!(a.verifying_key_bytes(), b.verifying_key_bytes());
+    }
+
+    #[test]
+    fn test_sign_deterministic() {
+        let id = AgentIdentity::new();
+        let data = b"same data";
+        let sig1 = id.sign_data(data);
+        let sig2 = id.sign_data(data);
+        assert_eq!(sig1, sig2, "Same data + same key must produce same signature");
+    }
+
+    #[test]
+    fn test_default() {
+        let id = AgentIdentity::default();
+        assert_ne!(id.id(), Uuid::nil());
+    }
+
+    #[test]
+    fn test_clone() {
+        let id = AgentIdentity::new();
+        let cloned = id.clone();
+        assert_eq!(id.id(), cloned.id());
+        assert_eq!(id.verifying_key_bytes(), cloned.verifying_key_bytes());
+    }
+}
