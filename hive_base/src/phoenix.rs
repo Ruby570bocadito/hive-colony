@@ -1,7 +1,32 @@
+use chacha20::ChaCha20;
+use chacha20::cipher::{KeyIvInit, StreamCipher};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use uuid::Uuid;
+
+/// Derive a 32-byte ChaCha20 key from fragment_id using SHA-256.
+/// Prevents casual filesystem reads from revealing fragment data.
+fn fragment_key(fragment_id: u32) -> [u8; 32] {
+    use sha2::{Sha256, Digest};
+    let mut hasher = Sha256::new();
+    hasher.update(b"HIVE_FRAG_KEY");
+    hasher.update(&fragment_id.to_le_bytes());
+    let result = hasher.finalize();
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&result);
+    key
+}
+
+/// Encrypt/decrypt fragment data in-place using ChaCha20.
+/// Deterministic per-fragment_id (same key + nonce = same keystream).
+fn crypt_fragment(data: &mut [u8], fragment_id: u32) {
+    let key = fragment_key(fragment_id);
+    let mut nonce = [0u8; 12];
+    nonce[..4].copy_from_slice(&fragment_id.to_le_bytes());
+    let mut cipher = ChaCha20::new((&key).into(), (&nonce).into());
+    cipher.apply_keystream(data);
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColonyGenome {
@@ -99,16 +124,21 @@ impl Phoenix {
     }
 
     /// Hide a fragment in the most appropriate location.
+    /// Data is encrypted at rest using a ChaCha20 key derived from genome_id.
     pub fn hide_fragment(fragment: &GenomeFragment, base_path: &Path) -> Result<String, String> {
         if !base_path.exists() {
             std::fs::create_dir_all(base_path).map_err(|e| e.to_string())?;
         }
 
+        // Encrypt fragment data before writing (deterministic per fragment_id)
+        let mut stored = fragment.data.clone();
+        crypt_fragment(&mut stored, fragment.fragment_id);
+
         match fragment.location {
             FragmentLocation::SpiFlash => {
                 // Simulate SPI flash write via sysfs
                 let path = base_path.join(format!(".spi_frag_{}", fragment.fragment_id));
-                std::fs::write(&path, &fragment.data).map_err(|e| e.to_string())?;
+                std::fs::write(&path, &stored).map_err(|e| e.to_string())?;
                 #[cfg(target_os = "linux")]
                 {
                     // Hide via chattr +i (immutable)
@@ -122,25 +152,25 @@ impl Phoenix {
                 // Write to a file with bad block marker
                 let path = base_path.join(format!(".badblock_{}", fragment.fragment_id));
                 let mut data = vec![0xFF; 512]; // Bad block marker
-                data.extend(&fragment.data);
+                data.extend(&stored);
                 std::fs::write(&path, &data).map_err(|e| e.to_string())?;
                 Ok(format!("Fragment {} hidden in bad block area", fragment.fragment_id))
             }
             FragmentLocation::MbrGpt => {
                 // Store in a hidden sector file
                 let path = base_path.join(format!(".mbr_reserved_{}", fragment.fragment_id));
-                std::fs::write(&path, &fragment.data).map_err(|e| e.to_string())?;
+                std::fs::write(&path, &stored).map_err(|e| e.to_string())?;
                 Ok(format!("Fragment {} hidden in MBR/GPT reserved", fragment.fragment_id))
             }
             FragmentLocation::UefiVariable => {
                 // Store in a UEFI variable simulation
                 let path = base_path.join(format!(".uefi_var_{}", fragment.fragment_id));
-                std::fs::write(&path, &fragment.data).map_err(|e| e.to_string())?;
+                std::fs::write(&path, &stored).map_err(|e| e.to_string())?;
                 Ok(format!("Fragment {} hidden in UEFI variable", fragment.fragment_id))
             }
             _ => {
                 let path = base_path.join(format!(".hive_frag_{}", fragment.fragment_id));
-                std::fs::write(&path, &fragment.data).map_err(|e| e.to_string())?;
+                std::fs::write(&path, &stored).map_err(|e| e.to_string())?;
                 Ok(format!("Fragment {} hidden in fallback area", fragment.fragment_id))
             }
         }
@@ -192,6 +222,7 @@ impl Phoenix {
     }
 
     /// Scan for hidden genome fragments in the filesystem.
+    /// Decrypts data using ChaCha20 key derived from fragment_id.
     pub fn scan_for_fragments(base_path: &Path) -> Vec<GenomeFragment> {
         let mut fragments = Vec::new();
         if !base_path.exists() { return fragments; }
@@ -204,9 +235,17 @@ impl Phoenix {
                 let name_str = name.to_string_lossy();
                 for pattern in &patterns {
                     if name_str.contains(pattern) {
-                        if let Ok(data) = std::fs::read(entry.path()) {
+                        if let Ok(raw) = std::fs::read(entry.path()) {
                             let frag_id = name_str.trim_start_matches(pattern)
                                 .parse::<u32>().unwrap_or(0);
+                            // BadBlock files have a 512-byte 0xFF marker prefix
+                            let data_start = if pattern == &".badblock_" && raw.len() > 512 {
+                                512
+                            } else {
+                                0
+                            };
+                            let mut data = raw[data_start..].to_vec();
+                            crypt_fragment(&mut data, frag_id);
                             fragments.push(GenomeFragment {
                                 fragment_id: frag_id,
                                 total_fragments: 5,
@@ -294,8 +333,7 @@ mod tests {
 
         let found = Phoenix::scan_for_fragments(&dir);
         assert_eq!(found.len(), 1, "Should find 1 fragment");
-        // Bad blocks have 512-byte marker prefix, check that data is contained
-        assert!(found[0].data.len() >= 5, "Data should contain original content");
+        // Data should be decrypted to original bytes (after the 512-byte bad block marker)
         assert_eq!(&found[0].data[found[0].data.len()-5..], &[1, 2, 3, 4, 5],
             "Last 5 bytes should be original fragment data");
 

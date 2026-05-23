@@ -15,6 +15,7 @@ pub struct HiveDirective {
     pub votes: HashMap<Uuid, Decision>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HiveMind {
     pub enabled: bool,
     pub directives: Vec<HiveDirective>,
@@ -28,6 +29,21 @@ impl HiveMind {
             directives: Vec::new(),
             consensus_threshold: 0.66,
         }
+    }
+
+    /// Save HiveMind state to a JSON snapshot.
+    pub fn save_state(&self, path: &std::path::Path) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let data = serde_json::to_vec(self).map_err(|e| e.to_string())?;
+        std::fs::write(path, data).map_err(|e| e.to_string())
+    }
+
+    /// Load HiveMind state from a JSON snapshot. Returns None if file missing.
+    pub fn load_state(path: &std::path::Path) -> Option<Self> {
+        let data = std::fs::read(path).ok()?;
+        serde_json::from_slice(&data).ok()
     }
 
     pub fn propose_directive(&mut self, proposer_id: Uuid, action: String,
@@ -177,5 +193,45 @@ mod tests {
         let mut hive = HiveMind::new();
         hive.propose_from_operator(Uuid::new_v4(), "test".into(), HashMap::new());
         assert_eq!(hive.get_pending_directives().len(), 1);
+    }
+
+    #[test]
+    fn test_save_and_load_state() {
+        let dir = std::env::temp_dir().join("hive_test_hivemind_snap");
+        let _ = std::fs::create_dir_all(&dir);
+        let snap_path = dir.join("hivemind.json");
+
+        // Create state, save it
+        let mut hive = HiveMind::new();
+        hive.enabled = true;
+        hive.propose_from_operator(Uuid::new_v4(), "snapshot_test".into(), HashMap::new());
+        assert!(hive.save_state(&snap_path).is_ok());
+
+        // Load into a new instance
+        let loaded = HiveMind::load_state(&snap_path).expect("Should load snapshot");
+        assert!(loaded.enabled, "enabled flag restored");
+        assert_eq!(loaded.directives.len(), 1, "directives restored");
+        assert!((loaded.consensus_threshold - 0.66).abs() < 0.01);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_consensus_save_and_load_state() {
+        use crate::consensus::ConsensusEngine;
+        let dir = std::env::temp_dir().join("hive_test_consensus_snap");
+        let _ = std::fs::create_dir_all(&dir);
+        let snap_path = dir.join("consensus.json");
+
+        let mut engine = ConsensusEngine::new(0.75);
+        let agent = Uuid::new_v4();
+        engine.adjust_reputation(agent, true, 2.0, 0.0);
+        assert!(engine.get_reputation(&agent) > 2.0);
+        assert!(engine.save_state(&snap_path).is_ok());
+
+        let loaded = ConsensusEngine::load_state(&snap_path).expect("Should load snapshot");
+        assert!(loaded.get_reputation(&agent) > 2.0);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -4,9 +4,11 @@
 // the accumulated weight of supporting votes vs total.
 
 use crate::ldc::{Decision, Message, Payload};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoteRecord {
     pub proposal_id: Uuid,
     pub action: String,
@@ -16,6 +18,7 @@ pub struct VoteRecord {
     pub timestamp: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsensusEngine {
     pub proposals: HashMap<Uuid, VoteRecord>,
     reputation: HashMap<Uuid, f32>,
@@ -38,6 +41,21 @@ impl ConsensusEngine {
                 .unwrap()
                 .as_secs(),
         }
+    }
+
+    /// Save consensus engine state to a JSON snapshot.
+    pub fn save_state(&self, path: &std::path::Path) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let data = serde_json::to_vec(self).map_err(|e| e.to_string())?;
+        std::fs::write(path, data).map_err(|e| e.to_string())
+    }
+
+    /// Load consensus engine state from a JSON snapshot.
+    pub fn load_state(path: &std::path::Path) -> Option<Self> {
+        let data = std::fs::read(path).ok()?;
+        serde_json::from_slice(&data).ok()
     }
 
     pub fn register_proposal(&mut self, proposal_id: Uuid, action: String, argument: String, proposer: Uuid, timestamp: u64) {

