@@ -5,8 +5,7 @@
 //
 // Ethical guard: only enabled when colony.brainwashing = true (off by default).
 
-use tracing::{info, warn};
-use std::collections::HashMap;
+use tracing::info;
 
 /// A phishing campaign generated from stolen context.
 #[derive(Debug, Clone)]
@@ -166,7 +165,7 @@ fn generate_template_phish(
     ctx: &VictimContext,
     target_user: &str,
     impersonating: &str,
-    goal: &str,
+    _goal: &str,
 ) -> String {
     let tool = ctx.it_tools.first().map(|s| s.as_str()).unwrap_or("the system");
 
@@ -187,7 +186,7 @@ fn generate_template_phish(
 }
 
 /// Generate a plausible subject line based on the goal.
-fn generate_subject(goal: &str, _tools: &[String]) -> String {
+fn generate_subject(_goal: &str, _tools: &[String]) -> String {
     let templates = [
         ("URGENT: Security Verification Required"),
         ("Action Needed: Account Access Review"),

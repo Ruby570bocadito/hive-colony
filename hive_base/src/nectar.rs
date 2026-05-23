@@ -4,9 +4,7 @@
 // Reduces exfiltration time drastically — critical for avoiding detection.
 
 use crate::crypto::{encrypt_chacha20, derive_key};
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use tokio::time::sleep;
 use tracing::{info, warn};
 
 /// Configuration for a nectar storm exfiltration run.

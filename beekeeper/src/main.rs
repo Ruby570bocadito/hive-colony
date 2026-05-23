@@ -146,7 +146,7 @@ fn main() {
     }
 }
 
-fn print_status(watch: bool, interval: u64) {
+fn print_status(watch: bool, _interval: u64) {
     println!("SWARM STATUS");
     println!("============");
     println!();
@@ -208,7 +208,7 @@ fn run_validation() {
     let mut passed = 0;
     let mut failed = 0;
 
-    for (name, desc, check_fn) in &checks {
+    for (_name, desc, check_fn) in &checks {
         print!("  {}... ", desc);
         if check_fn() {
             println!("PASS");

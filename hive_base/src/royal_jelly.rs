@@ -2,7 +2,7 @@
 // The Queen produces high-priority strategic guidance.
 // Workers prioritize royal-jelly-marked targets above all else.
 
-use crate::ldc::{Payload, Message, Role, Value};
+use crate::ldc::{Message, Role, Value};
 use uuid::Uuid;
 use std::collections::HashMap;
 
@@ -26,6 +26,10 @@ pub enum JellyTarget {
     MaximizeSpread,           // spread as fast as possible
     GoSilent,                 // cease all operations
     ExfiltrateNow,            // dump all collected data
+    SabotageIntegrity,        // activate Saboteur bees
+    Tournament { competitors: usize, generations: usize },  // darwinian tournament
+    HiveMindActivation,       // activate decentralized consensus control
+    PhoenixProtocol,          // fragment and hide colony genome for rebirth
 }
 
 impl RoyalJelly {
@@ -40,6 +44,11 @@ impl RoyalJelly {
             JellyTarget::MaximizeSpread => Value::String("max_spread".into()),
             JellyTarget::GoSilent => Value::String("go_silent".into()),
             JellyTarget::ExfiltrateNow => Value::String("exfil_now".into()),
+            JellyTarget::SabotageIntegrity => Value::String("sabotage_integrity".into()),
+            JellyTarget::Tournament { competitors, generations } =>
+                Value::String(format!("tournament:{}:{}", competitors, generations)),
+            JellyTarget::HiveMindActivation => Value::String("hivemind_activate".into()),
+            JellyTarget::PhoenixProtocol => Value::String("phoenix_protocol".into()),
         };
 
         Message::belief(

@@ -7,7 +7,7 @@
 //   LdC → Cobalt Strike Beacon (SMB named pipe)
 //   Sliver/Cobalt Strike → LdC (inject commands into swarm)
 
-use crate::ldc::{Message, Payload, Role, Value, Decision};
+use crate::ldc::{Message, Payload, Role, Value};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use std::collections::HashMap;

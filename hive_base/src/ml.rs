@@ -7,6 +7,7 @@
 use tracing::{info, warn};
 
 /// RandomForest classifier loaded from binary model data.
+#[allow(dead_code)]
 pub struct RandomForest {
     n_estimators: u32,
     n_classes: u32,
@@ -14,6 +15,7 @@ pub struct RandomForest {
     trees: Vec<DecisionTree>,
 }
 
+#[allow(dead_code)]
 struct DecisionTree {
     n_nodes: u32,
     children_left: Vec<i32>,

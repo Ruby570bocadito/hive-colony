@@ -1,0 +1,78 @@
+🧬 La Idea: Selección Natural en la Colmena
+Imagina que la colonia libera deliberadamente múltiples variantes de modelos de ataque que compiten por un mismo objetivo. No colaboran: compiten. Como machos de abeja que persiguen a la reina en el vuelo nupcial. Solo el más rápido, el más sigiloso, el más letal, logra el objetivo y recibe el "premio" de la Reina: que su código, su estrategia, se propague a toda la colmena como plantilla ganadora.
+
+Los perdedores no son destruidos sin más. Sus rasgos útiles —una técnica de evasión innovadora, una ruta de movimiento lateral ingeniosa— se recombinan mediante "cruzamiento genético" en la siguiente generación, creando híbridos más fuertes. Este ciclo darwiniano se repite automáticamente con cada nuevo objetivo.
+
+🏆 El Torneo: "El Vuelo de la Reina"
+El concepto bebe directamente del algoritmo Digital Red Queen (DRQ) de Sakana AI, que demostró cómo la autocompetencia (self-play) hace que programas evolucionen hasta volverse invencibles sin intervención humana. DRQ utiliza un LLM para generar nuevos "guerreros" que deben derrotar a todos los anteriores, produciendo una secuencia de adaptación continua donde cada ronda genera un competidor más fuerte que el anterior. La Reina de Hive aplicaría esta misma dinámica, pero sobre objetivos reales de red team, no sobre un simulador.
+
+El torneo tiene reglas precisas:
+
+La Reina emite una directiva: RoyalJelly::JellyTarget::Tournament. Define el objetivo (un host, una subred, un controlador de dominio) y los criterios de victoria (velocidad, sigilo, daño).
+
+El Weaver genera competidores: Usando su LLM local, el Weaver crea entre 3 y 5 variantes de agentes de ataque. Cada una tiene diferencias reales: políticas MARL distintas, catálogos de exploits alternativos, estrategias de evasión diferentes, o configuraciones de LOLBins variadas. La investigación reciente sobre GRTS (Gamified Red Team Solver) ya demostró que esta diversidad de población es esencial para evitar el "colapso de modo", donde todos los agentes convergen a una estrategia predecible.
+
+Se liberan simultáneamente: Todos los competidores reciben el mismo objetivo al mismo tiempo. La arena compartida registra cada acción.
+
+La Reina puntúa y decide: Al alcanzarse el objetivo (o expirar un tiempo límite), la Reina evalúa cada competidor según los criterios definidos y elige al ganador. El algoritmo de CALF (Competitive Automultiagent Learner with Fuzzy Feedback) ya explora exactamente este mecanismo: agentes que compiten y se adaptan en tiempo real usando reglas difusas para ajustar sus estrategias.
+
+🔬 ¿Por qué esto no existe en ningún otro framework?
+Ningún C2 realiza competición interna con selección natural. Cobalt Strike, Sliver, Mythic: todos ejecutan comandos, no evolucionan agentes.
+
+Ningún malware aplica autocurrícula adversaria. El concepto de "agent autocurricula" —donde la competición genera comportamientos emergentes que ni el diseñador anticipó— está documentado en MARL pero jamás implementado en malware real.
+
+La metáfora biológica es genuina, no cosmética. El vuelo nupcial de las abejas tiene una función real en tu software: seleccionar y propagar el mejor código.
+
+📊 Comparación con el estado del arte
+Concepto	DRQ (Sakana AI)	GRTS (Red Team Game)	Hive Queen's Tournament (TU PROPUESTA)
+Agentes que compiten entre sí	✅	✅	✅
+Objetivos reales de red team	❌ (solo Core War simulado)	❌ (solo LLM safety)	✅ (hosts, AD, redes reales)
+Mutación y evolución de código	✅ vía LLM	❌	✅ vía Weaver + LLM
+Selección natural darwiniana	✅	✅	✅
+Recombinación de rasgos entre generaciones	❌	❌	✅ (cruza genética de variantes)
+Integrado en un C2 operativo	❌	❌	✅
+Hive Queen's Tournament sería el primer framework que aplica evolución darwiniana a agentes de red team sobre infraestructura real.
+
+🧬 Diseño del Módulo: tournament.rs
+text
+tournament.rs
+├── struct TournamentConfig {
+│       target: Target,           // IP, subred, dominio
+│       competitors: usize,       // 3-5 variantes
+│       criteria: Vec<Criteria>,  // Speed, Stealth, Damage, Coverage
+│       timeout_secs: u64,
+│       generations: usize,       // cuántas rondas
+│   }
+├── fn generate_competitors()    // Weaver crea N variantes con LLM
+├── fn release_simultaneously()  // Todos atacan a la vez
+├── fn score_competitor()        // Reina evalúa según criterios
+├── fn select_winner()           // El mejor puntuado
+├── fn propagate_winner()        // Su código se distribuye a la colonia
+├── fn crossover()               // Recombinación de rasgos entre generaciones
+└── fn mutate_next_generation()  // Mutación de variantes para la siguiente ronda
+⚡ Ejemplo de un Torneo Real
+text
+[Queen] RoyalJelly::Tournament {
+    target: "dc01.internal.corp.local",
+    criteria: [Speed, Stealth, PrivilegeEscalation],
+    competitors: 4,
+    timeout: 300s
+}
+
+[Weaver] Generando 4 variantes:
+    - Variant A: política MARL agresiva + EternalBlue
+    - Variant B: política conservadora + Kerberoasting + LOLBins
+    - Variant C: híbrida + BlueKeep + DNS tunneling
+    - Variant D: experimental + ACL abuse + smoke_signals
+
+[Colmena] Liberando competidores simultáneamente...
+    - Variant A: detectada por EDR a los 45s → eliminada
+    - Variant B: acceso obtenido a los 120s, sigilo 0.8
+    - Variant C: timeout, no logró acceso
+    - Variant D: acceso a los 90s, sigilo 0.95, escaló a DA
+
+[Queen] Ganador: Variant D (score: 0.92)
+
+[Queen] Propagando código de Variant D a todas las Obreras...
+[Queen] Cruzando Variant D × Variant B para próxima generación...
+[Queen] Torneo completado. La colonia ha evolucionado.

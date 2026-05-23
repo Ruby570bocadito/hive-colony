@@ -23,8 +23,8 @@ pub struct WaggleTarget {
 impl WaggleTarget {
     /// Strength of the waggle: higher = more urgent to attack.
     pub fn waggle_strength(&self) -> f32 {
-        (self.value_score * 0.5 + (1.0 - self.edr_level) * 0.3 + 
-         (1.0 / (self.distance_hops as f32 + 1.0)) * 0.2)
+        self.value_score * 0.5 + (1.0 - self.edr_level) * 0.3 + 
+         (1.0 / (self.distance_hops as f32 + 1.0)) * 0.2
     }
 
     pub fn to_belief(&self, worker_id: Uuid) -> Message {
@@ -43,7 +43,7 @@ impl WaggleTarget {
 
     /// Parse a waggle dance from a belief.
     pub fn from_belief(belief: &Message) -> Option<Self> {
-        if let Payload::Belief { asset, value, confidence } = &belief.payload {
+        if let Payload::Belief { asset, value, confidence: _ } = &belief.payload {
             if asset.starts_with("waggle:") {
                 if let Value::String(data) = value {
                     let parts: HashMap<&str, &str> = data.split(' ')

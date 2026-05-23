@@ -4,7 +4,7 @@
 // Techniques found are shared via Death Dance/Waggle Dance.
 
 use std::process::Command;
-use tracing::{info, warn};
+use tracing::info;
 
 /// Privilege escalation vector found on the system.
 #[derive(Debug, Clone)]

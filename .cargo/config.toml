@@ -1,0 +1,14 @@
+# Cross-compilation linker configuration for Hive Colony
+# Uses rust-lld (from Rust toolchain) — no external linker needed.
+
+[target.x86_64-pc-windows-gnu]
+linker = "rust-lld"
+ar = "rust-ar"
+
+[target.aarch64-linux-android]
+linker = "rust-lld"
+ar = "rust-ar"
+
+[target.armv7-linux-androideabi]
+linker = "rust-lld"
+ar = "rust-ar"

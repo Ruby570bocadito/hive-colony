@@ -15,11 +15,11 @@ mod ring {
     const IORING_OP_READ: u8 = 22;
     const IORING_OP_WRITE: u8 = 23;
     const IORING_OP_SEND: u8 = 16;
-    const IORING_OP_RECV: u8 = 17;
-    const IORING_OP_OPENAT: u8 = 18;
-    const IORING_OP_CLOSE: u8 = 19;
-    const IORING_OP_ACCEPT: u8 = 13;
-    const IORING_OP_CONNECT: u8 = 14;
+    const _IORING_OP_RECV: u8 = 17;
+    const _IORING_OP_OPENAT: u8 = 18;
+    const _IORING_OP_CLOSE: u8 = 19;
+    const _IORING_OP_ACCEPT: u8 = 13;
+    const _IORING_OP_CONNECT: u8 = 14;
 
     const IORING_SETUP_SQPOLL: u32 = 2;
 
@@ -54,8 +54,8 @@ mod ring {
         features: u32,
         wq_fd: u32,
         resv: [u32; 3],
-        sq_off: [u32; 6],
-        cq_off: [u32; 2],
+        sq_off: [u32; 8],
+        cq_off: [u32; 8],
     }
 
     /// Direct io_uring syscall (425 on x86_64, 426 on newer kernels).
@@ -68,6 +68,7 @@ mod ring {
     }
 
     /// Initialize io_uring with SQPOLL (kernel thread handles submissions).
+    #[allow(dead_code)]
     pub struct IoUring {
         fd: i32,
         sq_ptr: *mut IoUringSQE,
@@ -147,13 +148,13 @@ mod ring {
 
             let sq_head = unsafe { (sq_ptr as *mut u8).add(params.sq_off[0] as usize) as *mut u32 };
             let sq_tail = unsafe { (sq_ptr as *mut u8).add(params.sq_off[1] as usize) as *mut u32 };
-            let sq_mask = unsafe { *(sq_ptr as *mut u8).add(params.sq_off[2] as usize) as *const u32 };
-            let sq_mask = unsafe { *sq_mask };
+            let sq_mask_ptr = unsafe { (sq_ptr as *mut u8).add(params.sq_off[2] as usize) as *const u32 };
+            let sq_mask = unsafe { ptr::read_unaligned(sq_mask_ptr) };
             let cq_head = unsafe { (cq_ptr as *mut u8).add(params.cq_off[0] as usize) as *mut u32 };
             let cq_tail = unsafe { (cq_ptr as *mut u8).add(params.cq_off[1] as usize) as *mut u32 };
-            let cq_mask = unsafe { *(cq_ptr as *mut u8).add(params.cq_off[2] as usize) as *const u32 };
-            let cq_mask = unsafe { *cq_mask };
-            let cqes = unsafe { (cq_ptr as *mut u8).add(params.cq_off[2] as usize + 4) as *mut IoUringCQE };
+            let cq_mask_ptr = unsafe { (cq_ptr as *mut u8).add(params.cq_off[2] as usize) as *const u32 };
+            let cq_mask = unsafe { ptr::read_unaligned(cq_mask_ptr) };
+            let cqes = unsafe { (cq_ptr as *mut u8).add(params.cq_off[5] as usize) as *mut IoUringCQE };
 
             Ok(Self {
                 fd, sq_ptr: sqe_ptr as *mut IoUringSQE, sq_head, sq_tail, sq_mask,
@@ -258,4 +259,32 @@ impl IoUring {
     pub fn stealth_read(&mut self, _fd: i32, _buf: &mut [u8], _offset: u64) -> io::Result<usize> { Ok(0) }
     pub fn stealth_write(&mut self, _fd: i32, _buf: &[u8], _offset: u64) -> io::Result<usize> { Ok(0) }
     pub fn stealth_send(&mut self, _fd: i32, _buf: &[u8]) -> io::Result<usize> { Ok(0) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_io_uring_new_succeeds() {
+        match IoUring::new(4) {
+            Ok(_ring) => {}
+            Err(e) => {
+                #[cfg(target_os = "linux")]
+                assert_eq!(e.kind(), io::ErrorKind::Other);
+                #[cfg(not(target_os = "linux"))]
+                panic!("IoUring::new should not fail on non-Linux: {}", e);
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(not(target_os = "linux"))]
+    fn test_io_uring_fallback_ops() {
+        let mut ring = IoUring::new(4).unwrap();
+        let mut buf = [0u8; 16];
+        assert_eq!(ring.stealth_read(0, &mut buf, 0).unwrap(), 0);
+        assert_eq!(ring.stealth_write(0, &buf, 0).unwrap(), 0);
+        assert_eq!(ring.stealth_send(0, &buf).unwrap(), 0);
+    }
 }

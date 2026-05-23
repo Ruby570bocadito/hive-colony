@@ -10,7 +10,7 @@
 //   - Compromised host lists
 //   - Royal Jelly directives
 
-use crate::ldc::{Message, Payload, Role, Value};
+use crate::ldc::{Message, Role, Value};
 use uuid::Uuid;
 use tracing::{info, warn};
 use std::collections::HashMap;

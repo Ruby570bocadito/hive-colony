@@ -185,11 +185,10 @@ impl HiveChamber {
                     }
                 }
             }
-
             my_seq += 1;
         }
 
-        self.last_read_seq.store(latest_seq, Ordering::Release);
+        self.last_read_seq.store(my_seq, Ordering::Release);
         messages
     }
 
@@ -219,7 +218,6 @@ impl HiveChamber {
         for i in 0..arena::MAX_AGENTS {
             let flags = arena::agent_flags_val(ptr, i);
             if (flags & 1) != 0 && (flags & 2) == 0 {
-                // registered and not already dead
                 let hb = arena::last_heartbeat_val(ptr, i);
                 if now.saturating_sub(hb) > timeout_secs {
                     let id_bytes = arena::agent_id_val(ptr, i);
@@ -234,7 +232,6 @@ impl HiveChamber {
         dead
     }
 
-    /// Get the arena pointer (for advanced use)
     pub fn arena_ptr(&self) -> *mut u8 {
         self.arena.as_ptr()
     }
@@ -256,7 +253,17 @@ impl HiveChamber {
     }
 }
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+fn u8_to_role(val: u8) -> Role {
+    match val {
+        0 => Role::Worker,
+        1 => Role::Weaver,
+        2 => Role::Drone,
+        3 => Role::Honeybee,
+        4 => Role::Queen,
+        5 => Role::Swarm,
+        _ => Role::Worker,
+    }
+}
 
 fn role_to_u8(role: &Role) -> u8 {
     match role {
@@ -269,15 +276,22 @@ fn role_to_u8(role: &Role) -> u8 {
     }
 }
 
-fn u8_to_role(val: u8) -> Role {
-    match val {
-        0 => Role::Worker,
-        1 => Role::Weaver,
-        2 => Role::Drone,
-        3 => Role::Honeybee,
-        4 => Role::Queen,
-        5 => Role::Swarm,
-        _ => Role::Worker,
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_role_to_u8() {
+        assert_eq!(role_to_u8(&Role::Worker), 0);
+        assert_eq!(role_to_u8(&Role::Queen), 4);
+        assert_eq!(role_to_u8(&Role::Swarm), 5);
+    }
+
+    #[test]
+    fn test_u8_to_role() {
+        assert_eq!(u8_to_role(0), Role::Worker);
+        assert_eq!(u8_to_role(4), Role::Queen);
+        assert_eq!(u8_to_role(99), Role::Worker);
     }
 }
 

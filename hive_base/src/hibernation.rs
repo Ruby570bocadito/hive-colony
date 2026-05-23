@@ -65,7 +65,7 @@ pub fn hibernate(duration_hours: u64) {
 }
 
 /// Check if it's safe to reactivate.
-pub fn is_safe_to_reactivate(max_sleep_hours: u64) -> bool {
+pub fn is_safe_to_reactivate(_max_sleep_hours: u64) -> bool {
     if detect_ir_activity() {
         warn!("HIBERNATION: IR still active, staying dormant");
         return false;

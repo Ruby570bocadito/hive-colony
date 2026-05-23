@@ -13,6 +13,12 @@ members = [
     "buzz",
 ]
 
+[workspace.package]
+version = "3.0.0"
+edition = "2021"
+description = "Hive Colony v3.0 — Multi-Agent Autonomous Red Team Framework"
+authors = ["Hive Colony Team"]
+
 [profile.release]
 opt-level = "z"
 lto = true

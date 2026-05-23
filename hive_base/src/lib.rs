@@ -45,7 +45,15 @@ pub mod larva;
 pub mod did;
 pub mod homomorphic;
 pub mod system_info;
+pub mod io_uring_ops;
 pub mod propaganda;
+pub mod saboteur;
+pub mod tournament;
+pub mod seer;
+pub mod chrononaut;
+pub mod phoenix;
+pub mod hivemind;
+pub mod whispernet;
 
 pub use comms::HiveChamber;
 pub use identity::AgentIdentity;

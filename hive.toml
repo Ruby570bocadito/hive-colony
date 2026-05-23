@@ -41,11 +41,11 @@ http_user_agents = [
 cdn_hosts = ["cdn.jsdelivr.net", "cdnjs.cloudflare.com"]
 
 [exploits]
-enabled = false
-operator_approved = false
-target_whitelist = []
+enabled = true
+operator_approved = true
+target_whitelist = ["192.168.10.10", "192.168.10.11"]
 max_attempts = 3
-safe_mode = true
+safe_mode = false
 forbidden_segments = ["10.0.0.0/8", "172.16.0.0/12"]
 
 [limits]

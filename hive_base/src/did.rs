@@ -7,7 +7,7 @@
 // because the DID is tied to their historical behavior verified by peers.
 
 use crate::identity::AgentIdentity;
-use crate::ldc::{Message, Payload, Role};
+use crate::ldc::{Message, Role};
 use uuid::Uuid;
 use std::collections::HashMap;
 use tracing::info;

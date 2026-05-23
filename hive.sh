@@ -120,8 +120,23 @@ case "${1:-}" in
 
     # ── build: compilar ───────────────────────────────────────────────
     build)
-        _build --workspace
-        echo -e "${GREEN}Build complete.${NC}"
+        _build "$@"
+        ;;
+    build-win)
+        echo -e "${GREEN}[build] Cross-compiling for Windows x86_64...${NC}"
+        echo -e "${YELLOW}NOTE: Requires mingw-w64 (run: bash setup_cross.sh win)${NC}"
+        export CARGO_BUILD_TARGET="x86_64-pc-windows-gnu"
+        cargo build --target x86_64-pc-windows-gnu --release 2>&1 | grep -E "Compiling|Finished|error" || true
+        ls -lh target/x86_64-pc-windows-gnu/release/*.exe 2>/dev/null || echo "No Windows binaries built"
+        unset CARGO_BUILD_TARGET
+        ;;
+    build-android)
+        echo -e "${GREEN}[build] Cross-compiling for Android aarch64...${NC}"
+        echo -e "${YELLOW}NOTE: Requires Android NDK (run: bash setup_cross.sh android)${NC}"
+        export CARGO_BUILD_TARGET="aarch64-linux-android"
+        cargo build --target aarch64-linux-android --release 2>&1 | grep -E "Compiling|Finished|error" || true
+        ls -lh target/aarch64-linux-android/release/* 2>/dev/null || echo "No Android binaries built"
+        unset CARGO_BUILD_TARGET
         ;;
 
     # ── clean: limpiar ────────────────────────────────────────────────
@@ -144,14 +159,22 @@ case "${1:-}" in
         echo "  ./hive.sh dev                # Dev mode: agents only"
         echo "  ./hive.sh all                # Full stack: C2 + dashboard + agents"
         echo ""
+        echo -e "${BOLD}Build commands:${NC}"
+        echo "  ./hive.sh build              # Compile for Linux (native)"
+        echo "  ./hive.sh build --release    # Release build (optimized, stripped)"
+        echo "  ./hive.sh build-win          # Cross-compile for Windows x86_64"
+        echo "  ./hive.sh build-android      # Cross-compile for Android aarch64"
+        echo ""
+        echo -e "${BOLD}Setup:${NC}"
+        echo "  bash setup_cross.sh          # Install cross-compilation toolchains"
+        echo ""
         echo -e "${BOLD}Commands:${NC}"
         echo "  dev     Launch 4 agents in terminal (safest)"
         echo "  all     Full stack: C2 + dashboard + agents"
-        echo "  test    Run all 80 tests"
+        echo "  test    Run all tests"
         echo "  e2e     End-to-end integration test"
         echo "  stop    Kill all hive processes"
         echo "  status  Show running agents"
-        echo "  build   Compile workspace"
         echo "  clean   Kill processes + cargo clean"
         echo ""
         echo -e "${BOLD}After launching:${NC}"

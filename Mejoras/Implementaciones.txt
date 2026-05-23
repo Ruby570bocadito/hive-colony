@@ -1,0 +1,3 @@
+Llevarlo a linux y a window y a Android y a iPhone 
+
+cambiarle el nombre al repo Hive Colony v3.0 — Framework Multi-Agente Autónomo

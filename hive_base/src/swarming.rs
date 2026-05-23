@@ -2,9 +2,9 @@
 // it splits — half the agents migrate to a new host and form a new hive.
 // Like a bee colony swarming to establish a new nest.
 
-use crate::ldc::{Message, Payload, Role};
+use crate::ldc::{Message, Role};
 use uuid::Uuid;
-use tracing::{info, warn};
+use tracing::info;
 
 /// Swarm configuration.
 pub struct SwarmConfig {
@@ -100,4 +100,30 @@ pub fn signal_swarm(queen_id: Uuid, target: &str, reason: &str) -> Message {
         Uuid::new_v4(), Role::Swarm,
         &format!("Migrate to {}: {}", target, reason),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_swarm_config_default() {
+        let cfg = SwarmConfig::default();
+        assert_eq!(cfg.max_agents_per_host, 6);
+        assert_eq!(cfg.migration_threshold, 5);
+    }
+
+    #[test]
+    fn test_swarm_below_threshold() {
+        let cfg = SwarmConfig::default();
+        assert!(initiate_swarm(3, "10.0.0.1", &cfg).is_none());
+    }
+
+    #[test]
+    fn test_signal_swarm_creates_status_event() {
+        let queen = Uuid::new_v4();
+        let msg = signal_swarm(queen, "10.0.0.2", "host full");
+        assert_eq!(msg.agent_id, queen);
+        assert_eq!(msg.agent_role, Role::Queen);
+    }
 }

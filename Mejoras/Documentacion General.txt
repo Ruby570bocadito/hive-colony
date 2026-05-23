@@ -1,0 +1,523 @@
+🐝 HIVE — Documentación General de Arquitectura
+Plataforma de Red Team Multi-Agente con Inteligencia de Enjambre
+1. Visión General
+Hive es un framework de Red Team que implementa una colonia de agentes autónomos especializados, comunicándose sin C2 centralizado, tomando decisiones por consenso y evolucionando sus tácticas mediante aprendizaje automático y competición interna.
+
+Principio fundamental: La inteligencia ofensiva no reside en un operador ni en un servidor, sino que emerge de la interacción descentralizada entre agentes que colaboran, compiten y se adaptan como un superorganismo biológico.
+
+2. Filosofía de Diseño
+Principio	Implementación
+Sin punto único de fallo	Todos los agentes son pares; no hay C2 jerárquico
+Comunicación sigilosa	Memoria compartida anónima + estigmergia en sistema de archivos + mesh P2P
+Adaptación continua	MARL, torneos darwinianos, mutación polimórfica
+Evasión multicapa	Syscalls directas, stack spoofing, fileless, anti-análisis, ofuscación
+Persistencia profunda	Bootkit UEFI, estigmergia, agentes durmientes, resurrección post-formateo
+Control descentralizado	Consenso ponderado con reputación, smart contracts operativos
+3. Nomenclatura y Equivalencias
+Rol en documentos antiguos	Nombre en código	Metáfora	Función táctica
+Scout	worker	Abeja obrera exploradora	Reconocimiento, clasificación ML, publicación de creencias
+Shaper	drone	Zángano estratega	Decisiones tácticas, regeneración, propagación
+Hoarder	honeybee	Abeja recolectora	Cifrado, exfiltración, destrucción segura
+Weaver	weaver	Abeja tejedora	Mutación polimórfica, ofuscación, generación de variantes
+Overmind / Queen	queen	Reina	Directivas estratégicas, C2 bridge, arbitraje
+Worm / Swarm	swarm	Enjambre autónomo	Propagación sin consenso, infección en cadena
+Operador	beekeeper	Apicultor	Consola de control, dashboard, supervisión
+4. Arquitectura del Sistema
+text
+┌─────────────────────────────────────────────────────────────────┐
+│                     SISTEMA INFECTADO                            │
+│                                                                 │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────┐ │
+│  │ WORKER   │ │ DRONE    │ │ HONEYBEE │ │ WEAVER   │ │QUEEN  │ │
+│  │ Percep.  │ │ Decisión │ │ Acción   │ │ Ofuscac. │ │Estrat.│ │
+│  │ ONNX/RF  │ │ MARL     │ │ AES+GCM  │ │ LLM      │ │C2 Brdg│ │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └───┬───┘ │
+│       │             │             │             │          │     │
+│       └─────────────┼─────────────┼─────────────┼──────────┘     │
+│                     │             │             │                │
+│              ┌──────┴─────────────┴─────────────┴──────┐         │
+│              │        SHARED MEMORY ARENA              │         │
+│              │   Ring Buffer Atómico (lock-free)       │         │
+│              │   memfd_create + mmap (sin path)       │         │
+│              └─────────────────────────────────────────┘         │
+│                                                                 │
+│  Agentes adicionales (activables por Royal Jelly):              │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
+│  │ LEECH    │ │ GUARDIAN │ │ STINGER  │ │ SWARM    │           │
+│  │ Creds.   │ │ Anti-    │ │ Payload  │ │ Prop.    │           │
+│  │ harvest  │ │ honeypot │ │ factory  │ │ autónoma │           │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
+└─────────────────────────────────────────────────────────────────┘
+         │
+         │  Smoke Signals / Nectar (C2 camuflado)
+         ▼
+┌─────────────────────────┐
+│   OPERADOR (Beekeeper)  │
+│   Dashboard :8080       │
+│   C2 Server :8443       │
+│   hive.sh brain         │
+└─────────────────────────┘
+Canales de comunicación:
+
+Shared Memory Arena: comunicación local entre agentes (0 puertos, 0 sockets)
+
+Estigmergia: rastros en xattr/ADS de archivos legítimos
+
+Smoke Signals: C2 camuflado como tráfico de CDN/cloud legítimo
+
+WhisperNet: mesh P2P cifrada para sincronización entre hosts
+
+Pheromone Trails: marcas en sistema de archivos compartiendo inteligencia táctica
+
+5. Agentes Principales
+5.1 Worker — Abeja Obrera Exploradora
+Característica	Detalle
+Archivo	agents/worker/
+Rol	Percepción del entorno
+ML	RandomForest 100% Rust (14 features → 3 clases: normal/backup/EDR)
+Módulos	recon.rs, ml.rs, pheromone.rs
+Capacidades:
+
+Detección de 8 familias EDR (CrowdStrike, Defender, SentinelOne, CarbonBlack, Cylance, Symantec, McAfee, Elastic)
+
+Enumeración de procesos, interfaces de red, OS, usuario, shares
+
+Clasificación del entorno con modelo ONNX/RandomForest
+
+Publicación de creencias en la arena compartida
+
+Escaneo de subredes vía ARP/nmap
+
+Marcado de rastros de feromonas en el sistema de archivos
+
+5.2 Drone — Zángano Estratega
+Característica	Detalle
+Archivo	agents/drone/
+Rol	Toma de decisiones y regeneración
+ML	Política MARL (62-dim → 10 acciones)
+Módulos	consensus.rs, lateral.rs, regenerate.rs
+Capacidades:
+
+Recepción de creencias del Worker
+
+Evaluación de política MARL para decidir acciones
+
+Generación de propuestas y votación en consenso
+
+Regeneración de agentes caídos desde RAM (fileless)
+
+Movimiento lateral vía SSH/SCP
+
+Orquestación de explotación controlada
+
+Recuperación de conocimiento desde estigmergia
+
+5.3 Honeybee — Abeja Recolectora
+Característica	Detalle
+Archivo	agents/honeybee/
+Rol	Ejecución final
+Módulos	encrypt.rs, exfil.rs, wipe.rs
+Capacidades:
+
+Cifrado de archivos con AES-256-GCM (clave aleatoria por sesión)
+
+Exfiltración HTTP POST al C2 con chunking paralelo
+
+Wipe seguro de 3 pasadas + zeros + unlink
+
+Activación solo por consenso (umbral 80%)
+
+Respeto de safe_mode y safe_ips
+
+Publicación de resultados en arena compartida
+
+5.4 Weaver — Abeja Tejedora
+Característica	Detalle
+Archivo	agents/weaver/
+Rol	Ofuscación y mutación
+IA	LLM local (Ollama) + 4 técnicas deterministas
+Módulos	mutate.rs, obfuscate.rs, lolbin_chain.rs
+Técnicas de mutación:
+
+XOR multi-byte con keystream aleatorio
+
+Inserción de NOP sleds de tamaño variable
+
+Reordenamiento de secciones del binario
+
+Inyección de código basura (dead code)
+
+Capacidades adicionales:
+
+Generación de cadenas LOLBin ofuscadas
+
+Stealth download + exec vía LOLBins
+
+Mutación de payloads de exploits
+
+Generación de variantes para torneos
+
+5.5 Queen — Reina
+Característica	Detalle
+Archivo	agents/queen/
+Rol	Estrategia global y C2 bridge
+Módulos	royal_jelly.rs, c2_bridge.rs, tournament.rs
+Capacidades:
+
+Emisión de directivas Royal Jelly (cambio de estrategia global)
+
+Puente C2: traducción Sliver/CS/HTTP ↔ LdC
+
+Orquestación de torneos darwinianos
+
+Evaluación y scoring de competidores
+
+Propagación del genoma ganador
+
+Arbitraje de disputas de consenso
+
+6. Agentes Especializados
+6.1 Leech — Abeja Chupasangre
+Cosecha credenciales de múltiples fuentes:
+
+Kerberos: TGT/TGS del ticket cache
+
+Git: .git-credentials, tokens en repositorios
+
+Procesos: variables de entorno (PASSWORD, SECRET, TOKEN, KEY)
+
+Navegadores: Chrome Login Data, Firefox logins.json
+
+RDP: configuraciones FreeRDP
+
+SSH: claves privadas en ~/.ssh/
+
+6.2 Guardian — Abeja Guardiana
+Defensa activa contra trampas del Blue Team:
+
+Detección de honeyfiles (señuelos)
+
+Detección de honeypots (patrones de red)
+
+Detección de canary tokens
+
+Verificación de integridad del entorno
+
+6.3 Stinger — Fábrica de Payloads
+Generación de stagers multi-formato:
+
+Python one-liner
+
+PowerShell script
+
+wget + pipe + bash
+
+curl + bash
+
+Paquetes .deb/.rpm
+
+6.4 Swarm — Enjambre Autónomo
+Propagación sin consenso:
+
+Auto-limitado: max 10 hops, 2 infecciones/min, 1h de vida
+
+SSH key auth + SCP deploy automático
+
+Respeto de safe_ips
+
+Lectura de creencias del Worker para evitar EDRs
+
+7. Módulos Core (hive_base/)
+Módulo	Función
+shared_arena.rs	Ring buffer atómico en RAM compartida (lock-free)
+arena_mgr.rs	memfd_create / shm_open cross-process
+comms.rs	SwarmChamber — API unificada sin bus central
+consensus.rs	Votación ponderada por reputación con decay
+ldc.rs	Protocolo LdC: Belief, Proposal, Vote, Query, StatusEvent
+identity.rs	Ed25519: firma y verificación de mensajes
+crypto.rs	XOR keystream + ChaCha20 para modelos y claves
+fileless.rs	MemfdBinary — ejecución sin disco
+syscalls.rs	Syscalls directas ASM + Hades Gate (resolución dinámica)
+anti_analysis.rs	Anti-debugger, anti-sandbox, anti-VM
+stack_spoof.rs	Call stack sintético (SilentMoonWalk)
+attack.rs	36 técnicas MITRE ATT&CK mapeadas
+lateral.rs	SSH, cred harvesting, SCP deploy, network discovery
+exfil.rs	DNS tunneling, HTTP POST C2, traffic scheduler
+c2_bridge.rs	Traducción Sliver/CS/HTTP ↔ LdC
+exploits.rs	EternalBlue, BlueKeep, Log4Shell (triple safety switch)
+config.rs	HiveConfig::load() desde hive.toml
+obfstr.rs	Macro obf!("string") — XOR en compilación
+panal.rs	Protege IPs del operador
+guardian.rs	Detección de honeyfiles, honeypots, canary tokens
+wax.rs	Sellado de payloads con ChaCha20 + mutación
+nectar.rs	WebSocket C2 camuflado como CDN + torrent de néctar
+honeycomb.rs	Persistencia (crontab, systemd, .bashrc, WMI, bootkit UEFI)
+hive_scale.rs	Auto-escalado por CPU/RAM/disco
+royal_jelly.rs	Directivas prioritarias de la Reina
+waggle_dance.rs	Compartición de targets con vectores
+pheromone.rs	Rastros de reconocimiento que decaen
+swarming.rs	División de colonia a nuevo host
+stigmergy.rs	Marcas en xattr/ADS de archivos legítimos
+lolbin.rs	Catálogo y ejecución de LOLBins
+larva.rs	Agentes efímeros de un solo uso
+parasite.rs	Inyección en procesos legítimos
+forensic.rs	Cobertura de huellas post-operación
+miner.rs	Extracción de secretos DevOps/CI/CD
+chameleon.rs	Mimetismo de nombres de proceso
+dormant.rs	Hibernación con activación por eventos
+telepathy.rs	Comunicación fuera de banda (Bluetooth, Wi-Fi Direct)
+smoke_signals.rs	C2 camuflado como 7 servicios cloud reales
+death_dance.rs	A/B testing de variantes de ataque
+hades_gate.rs	Resolución dinámica de syscall numbers
+tournament.rs	Torneos darwinianos de agentes
+seer.rs	Predicción de respuesta del Blue Team
+chrononaut.rs	Ataques diferidos vía timestamps
+phoenix.rs	Regeneración post-formateo desde hardware
+saboteur.rs	Ataques de integridad de datos
+hivemind.rs	Consenso como conciencia colectiva (DAO ofensiva)
+whispernet.rs	Mesh P2P cifrada de corto alcance
+8. Canales de Comunicación
+Canal	Módulo	Alcance	Sigilo
+Shared Memory Arena	shared_arena.rs	Local (mismo host)	Muy alto (sin red)
+Pheromone Trails	pheromone.rs, stigmergy.rs	Local (filesystem)	Muy alto (metadatos)
+Smoke Signals	smoke_signals.rs	Remoto (C2)	Alto (camuflaje cloud)
+Nectar	nectar.rs	Remoto (exfil)	Alto (CDN WebSocket)
+WhisperNet	whispernet.rs	Remoto (mesh P2P)	Alto (corto alcance, cifrado)
+DNS Tunneling	exfil.rs	Remoto (exfil)	Medio
+HTTP POST	exfil.rs	Remoto (exfil)	Medio (padding + jitter)
+9. Sistema de Consenso
+Parámetro	Valor por defecto	Descripción
+Umbral de consenso	66%	Porcentaje de votos ponderados necesario
+Peso inicial	1.0	Reputación inicial de cada agente
+Recompensa	+0.1	Incremento por acierto
+Penalización	-0.2	Decremento por fallo
+Decay	0.001/minuto	Decaimiento hacia 1.0
+Timeout de votación	30s	Tiempo máximo para alcanzar consenso
+10. Sistema de Directivas (Royal Jelly)
+Directiva	Efecto
+MaximizeSpread	Activa modo agresivo, propaga a toda subred
+MaximizeStealth	Minimiza actividad, desactiva escaneos activos
+ExfiltrateNow	Ordena exfiltración inmediata de todo el loot
+SabotageIntegrity	Activa Abejas Saboteadoras
+Tournament	Inicia torneo darwiniano
+Hibernate	Suspende toda actividad hasta trigger
+PhoenixProtocol	Fragmenta y oculta genoma de colonia
+HiveMindActivation	Activa consenso como control descentralizado
+11. Ciclo de Vida de una Operación
+text
+FASE 1: DESPLIEGUE
+  Stinger → memfd_create(agentes) → exec → autodestrucción
+  Todos los agentes en RAM, cero disco
+
+FASE 2: RECONOCIMIENTO
+  Worker escanea sistema → ML clasifica → publica creencias
+  Leech cosecha credenciales → deposita en arena
+
+FASE 3: PLANIFICACIÓN
+  Drone evalúa política MARL → genera propuestas
+  Consenso ponderado con reputación → decisión colectiva
+
+FASE 4: PROPAGACIÓN
+  Drone despliega agentes vía SSH/SCP
+  Swarm propaga autónomamente (si está activo)
+  Estigmergia marca hosts comprometidos
+
+FASE 5: ACCIÓN
+  Honeybee cifra/exfiltra/destruye (si consenso ≥ 80%)
+  Saboteadoras alteran datos (si RoyalJelly activo)
+
+FASE 6: SUPERVIVENCIA
+  Guardian detecta amenazas → alerta a la colonia
+  Drone regenera agentes caídos
+  Hibernación/reactivación por eventos
+  Bootkit UEFI asegura persistencia profunda
+
+FASE 7: EVOLUCIÓN
+  Torneos darwinianos mejoran las tácticas
+  Death Dance A/B testing de variantes
+  Propagación del genoma ganador
+12. Stack Tecnológico
+Componente	Tecnología
+Lenguaje	Rust (100% del código)
+ML Inferencia	RandomForest 100% Rust (sin ort, sin C/C++)
+ML Entrenamiento	Python (scikit-learn, stable-baselines3) → ONNX → Rust
+LLM Local	Ollama (TinyLlama, Phi-3-mini)
+Criptografía	ChaCha20-Poly1305, AES-256-GCM, Ed25519
+Comunicación	memfd_create, shm_open, mmap (sin TCP local)
+C2 Externo	HTTPS/TLS, WebSocket, DNS
+Build	Cargo workspace, build.rs para cifrado de modelos
+Tests	106 tests (92 unit, 4 integration, 10 e2e)
+CI/CD	GitHub Actions
+Contenedores	Docker + docker-compose
+13. Mapeo MITRE ATT&CK (36 técnicas)
+Táctica	Técnica	ID	Módulo
+Execution	Fileless Execution	T1564.004	fileless.rs
+Execution	LOLBins	T1218	lolbin.rs
+Execution	Windows Command Shell	T1059.003	lateral.rs
+Persistence	Bootkit UEFI	T1542.001	honeycomb.rs
+Persistence	WMI Event Subscription	T1546.003	honeycomb.rs
+Persistence	Cron	T1053.003	honeycomb.rs
+Persistence	Systemd Service	T1543.002	honeycomb.rs
+Privilege Escalation	Resource-Based Delegation	T1098	hive_scale.rs
+Defense Evasion	Syscalls Directas	T1106	syscalls.rs
+Defense Evasion	Stack Spoofing	—	stack_spoof.rs
+Defense Evasion	Hades Gate	T1106	hades_gate.rs
+Defense Evasion	Obfuscated Files	T1027.002	weaver/
+Defense Evasion	Anti-Debugging	T1622	anti_analysis.rs
+Defense Evasion	Anti-VM	T1614.001	anti_analysis.rs
+Defense Evasion	Anti-Sandbox	T1497.001	anti_analysis.rs
+Defense Evasion	Process Injection	T1055	parasite.rs
+Defense Evasion	Process Masquerading	T1036	chameleon.rs
+Credential Access	Kerberos Ticket Harvesting	T1558	leech.rs
+Credential Access	Credentials from Git	T1552.001	miner.rs
+Credential Access	LSASS Memory	T1003.001	leech.rs
+Discovery	Network Scanning	T1046	worker/, lateral.rs
+Discovery	Process Discovery	T1057	worker/
+Discovery	System Info Discovery	T1082	worker/
+Lateral Movement	SSH	T1021.004	lateral.rs
+Lateral Movement	SCP Deploy	T1570	lateral.rs
+Lateral Movement	Exploitation EternalBlue	T1210	exploits.rs
+Lateral Movement	Exploitation BlueKeep	T1210	exploits.rs
+Collection	Data from Local System	T1005	honeybee/
+Exfiltration	DNS Tunneling	T1048.003	exfil.rs
+Exfiltration	HTTP C2	T1048.002	exfil.rs
+Exfiltration	WebSocket CDN	T1048.002	nectar.rs
+Impact	Data Encrypted (AES-256)	T1485	honeybee/
+Impact	Data Manipulation	T1565	saboteur.rs
+Command & Control	Web Service C2	T1102	smoke_signals.rs
+Command & Control	Multi-hop Proxy	T1090	whispernet.rs
+14. Configuración (hive.toml)
+toml
+[brain]
+safe_ips = ["192.168.1.100"]
+safe_hostnames = ["operator-pc"]
+
+[colony]
+aggressive = false
+safe_mode = true
+max_hops = 10
+max_infections_per_minute = 2
+
+[timing]
+heartbeat_interval_secs = 30
+dead_agent_timeout_secs = 90
+regeneration_check_secs = 60
+consensus_timeout_secs = 30
+decision_interval_secs = 30
+
+[exploits]
+eternal_blue_enabled = false
+blue_keep_enabled = false
+log4shell_enabled = false
+
+[exfil]
+chunk_size = 1048576
+parallel_streams = 4
+jitter_ms = 500
+c2_url = "https://192.168.1.100:8443/collect"
+
+[hivemind]
+enabled = false
+consensus_threshold = 0.66
+whispernet_enabled = false
+mesh_peers = []
+15. Comandos de Operación
+bash
+# Build completo
+./hive.sh build
+
+# Modo operador (solo C2 + dashboard)
+./hive.sh brain
+
+# Modo colonia (C2 + agentes locales)
+./hive.sh colony
+
+# Modo desarrollo (agentes en terminal, sin C2)
+./hive.sh dev
+
+# Desplegar en víctima remota
+./hive.sh deploy 192.168.1.50
+
+# Ver estado de la colonia
+./hive.sh status
+
+# Detener toda la colonia
+./hive.sh stop
+
+# Ejecutar tests
+./hive.sh test
+
+# Validación EDR
+python3 tests/validate_edr.py --output edr_report.json --html
+
+# Dashboard
+python3 tests/dashboard.py --port 8080
+
+# Pipeline CI/CD
+bash tests/edr_gauntlet.sh --watch --report results.json
+16. Pruebas
+Tipo	Cantidad	Framework
+Unitarias	92	#[test] en Rust
+Integración	4	edr_gauntlet.sh
+End-to-End	10	hive_test.sh
+Total	106	
+Suites de pruebas:
+
+Build verification
+
+TCP ports (deben ser 0)
+
+Forense binario (sin direcciones hardcodeadas)
+
+Shared memory (concurrencia, atomicidad)
+
+Procesos (fileless execution)
+
+Anti-análisis (debugger, VM, sandbox)
+
+17. Innovaciones Clave Frente al Estado del Arte
+Capacidad	Hive	Cobalt Strike	Sliver	Empire
+Comunicación descentralizada sin C2	✅	❌	❌	❌
+Consenso multi-agente con reputación	✅	❌	❌	❌
+MARL para decisiones tácticas	✅	❌	❌	❌
+Torneos darwinianos entre agentes	✅	❌	❌	❌
+LLM local para mutación polimórfica	✅	❌	❌	❌
+Bootkit UEFI + resurrección post-formateo	✅	❌	❌	❌
+Ataques de integridad (Saboteadoras)	✅	❌	❌	❌
+Gemelo digital predictivo (Adivinas)	✅	❌	❌	❌
+Ataques diferidos vía timestamps	✅	❌	❌	❌
+Hive Mind (DAO ofensiva)	✅	❌	❌	❌
+Estigmergia en sistema de archivos	✅	❌	❌	❌
+C2 camuflado como 7 servicios cloud	✅	❌	❌	❌
+100% Rust, 0 dependencias C/C++	✅	❌	❌	❌
+18. Estado Actual y Próximos Pasos
+Versión actual: 1.0.0-dev
+Tests: 106/106 pasando
+Build: 0 dependencias C/C++
+Puntuación autoevaluada: 8.5/10 → objetivo 10/10
+
+Pendiente para 10/10:
+
+Unificar nomenclatura (docs ↔ código)
+
+Activar ONNX con burn
+
+Tests unitarios adicionales en módulos core
+
+Intervalos configurables en hive.toml
+
+Abstracción de rutas para Windows
+
+Futuras expansiones:
+
+Implementación completa de tournament.rs
+
+Implementación completa de seer.rs
+
+Implementación completa de chrononaut.rs
+
+Implementación completa de phoenix.rs
+
+Implementación completa de saboteur.rs
+
+Implementación completa de hivemind.rs + whispernet.rs

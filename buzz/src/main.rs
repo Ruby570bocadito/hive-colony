@@ -34,7 +34,7 @@ fn main() {
     let mut overmind = spawn_agent("queen", &arena_name);
 
     // Colony mode: also launch Worm
-    let mut worm = if cfg.colony.aggressive {
+    let worm = if cfg.colony.aggressive {
         thread::sleep(Duration::from_millis(500));
         info!("  worm agent starting (autonomous spread)...");
         Some(spawn_agent("swarm", &arena_name))

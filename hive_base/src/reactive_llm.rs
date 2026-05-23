@@ -4,7 +4,7 @@
 // This defeats behavioral EDR detection — every sample is unique.
 
 use std::process::Command;
-use tracing::{info, warn};
+use tracing::info;
 
 /// Request Ollama to rewrite a code snippet with different variable names,
 /// reordered functions, and different control flow — same logic.
@@ -46,7 +46,7 @@ pub fn llm_rewrite(code_snippet: &str, language: &str) -> Option<String> {
 /// Mutate an agent binary using LLM-guided byte-level changes.
 /// The LLM suggests which sections to modify and the Weaver applies them.
 pub fn llm_mutate_binary(binary: &[u8], agent_name: &str) -> Option<Vec<u8>> {
-    let header = binary.get(..4096)?;
+    let _header = binary.get(..4096)?;
     let body = binary.get(4096..)?;
 
     let prompt = format!(

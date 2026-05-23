@@ -3,7 +3,7 @@
 // Successful variants are shared via Waggle Dance so the colony learns.
 // Failed variants are downgraded. Over time, the colony evolves optimal tactics.
 
-use crate::ldc::{Message, Payload, Role, Value};
+use crate::ldc::{Message, Role, Value};
 use uuid::Uuid;
 use std::collections::HashMap;
 use tracing::{info, warn};

@@ -53,6 +53,7 @@ pub mod linux {
     /// Used to spoof the call chain for syscalls.
     ///
     /// Layout: [saved_rbp][return_addr][...]
+    #[allow(dead_code)]
     pub struct SyntheticFrame {
         saved_rbp: usize,
         return_addr: usize,
