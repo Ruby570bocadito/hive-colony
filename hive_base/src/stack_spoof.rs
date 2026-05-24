@@ -21,6 +21,11 @@ pub mod linux {
 
     /// Get the return address from a given frame pointer.
     /// [RBP] = previous RBP, [RBP+8] = return address.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `rbp` points to a valid stack frame.
+    /// Dereferencing an invalid or misaligned pointer will cause UB.
     #[inline(always)]
     pub unsafe fn get_return_address(rbp: usize) -> usize {
         *(rbp as *const usize).add(1)
@@ -93,7 +98,11 @@ pub mod linux {
     /// Execute a syscall with a spoofed call stack.
     /// The EDR sees the synthetic frames instead of our real call chain.
     ///
-    /// SAFETY: The caller must ensure frame lives for the duration of the call.
+    /// # Safety
+    ///
+    /// The caller must ensure `frames` lives for the duration of the call.
+    /// The syscall number and arguments must be valid for the current platform.
+    #[allow(clippy::too_many_arguments)]
     pub unsafe fn spoofed_syscall6(
         nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64,
         frames: &[SyntheticFrame],
@@ -135,7 +144,7 @@ pub mod linux {
         // something might be wrong (or we're already spoofing)
         let libc_base = find_module_base("libc");
         let has_libc = frames.iter().any(|&addr| {
-            libc_base.map_or(false, |base| {
+            libc_base.is_some_and(|base| {
                 addr >= base && addr < base + 0x200000
             })
         });

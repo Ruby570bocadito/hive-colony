@@ -23,6 +23,12 @@ pub struct SabotageOrder {
 
 pub struct Saboteur;
 
+impl Default for Saboteur {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Saboteur {
     pub fn new() -> Self { Self }
 
@@ -58,7 +64,7 @@ impl Saboteur {
 
     fn mutate_csv(&self, path: &Path, severity: f32) -> Result<String, String> {
         let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-        let mut lines: Vec<&str> = content.lines().collect();
+        let mut lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
         if lines.len() < 2 {
             return Err("CSV too short".into());
         }
@@ -76,17 +82,18 @@ impl Saboteur {
             let col_idx = rand::Rng::gen_range(&mut rng, 0..cols.len());
             let original = cols[col_idx].trim();
             if let Ok(val) = original.parse::<f64>() {
-                let delta = val * 0.0001 * severity as f64; // 0.01% deviation
+                let delta = val * 0.0001 * severity as f64;
                 let new_val = if rand::Rng::gen_bool(&mut rng, 0.5) {
                     val + delta
                 } else {
                     val - delta
                 };
-                let new_cols: Vec<String> = cols.iter()
+                let new_row: Vec<String> = lines[row_idx]
+                    .split(',')
                     .enumerate()
                     .map(|(i, c)| if i == col_idx { format!("{:.4}", new_val) } else { c.to_string() })
                     .collect();
-                lines[row_idx] = Box::leak(new_cols.join(",").into_boxed_str());
+                lines[row_idx] = new_row.join(",");
             }
         }
 
@@ -234,7 +241,7 @@ impl Saboteur {
 
         let mut new_content = existing;
         for entry in &fake_entries {
-            new_content.push_str("\n");
+            new_content.push('\n');
             new_content.push_str(entry);
         }
 
@@ -348,7 +355,7 @@ mod tests {
     fn test_new_saboteur_creates_empty() {
         let s = Saboteur::new();
         // Saboteur is a unit struct; verify it can be created and used
-        let targets = s.scan_for_targets(&std::path::Path::new("/"));
+        let targets = s.scan_for_targets(std::path::Path::new("/"));
         assert!(targets.is_empty());
     }
 
@@ -398,7 +405,7 @@ mod tests {
     fn test_saboteur_and_seer_integration() {
         let s = Saboteur::new();
         let seer = Seer::new();
-        let targets = s.scan_for_targets(&std::path::Path::new("/"));
+        let targets = s.scan_for_targets(std::path::Path::new("/"));
         let telemetry = TelemetrySample {
             edr_process_count: 0, total_processes: 50,
             uptime_hours: 10, firewall_rules: 3, logged_in_users: 2, listening_ports: 0,
@@ -468,7 +475,7 @@ mod tests {
         let _ = std::fs::create_dir_all(&dir);
         std::fs::write(dir.join("data.csv"), "a,b,c\n1,2,3").unwrap();
         std::fs::write(dir.join("main.rs"), "fn main() {}").unwrap();
-        std::fs::write(dir.join("model.onnx"), &[0u8; 100]).unwrap();
+        std::fs::write(dir.join("model.onnx"), [0u8; 100]).unwrap();
 
         let sab = Saboteur::new();
         let targets = sab.scan_for_targets(&dir);

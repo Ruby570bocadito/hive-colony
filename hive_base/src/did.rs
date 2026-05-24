@@ -38,6 +38,12 @@ pub struct DidRegistry {
     pub documents: HashMap<Uuid, DidDocument>,
 }
 
+impl Default for DidRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DidRegistry {
     pub fn new() -> Self {
         Self { documents: HashMap::new() }

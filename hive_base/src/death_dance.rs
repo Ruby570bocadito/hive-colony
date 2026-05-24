@@ -66,6 +66,12 @@ pub struct DeathDance {
     pub technique_index: HashMap<AttackTechnique, Vec<Uuid>>,
 }
 
+impl Default for DeathDance {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DeathDance {
     pub fn new() -> Self {
         Self { variants: HashMap::new(), technique_index: HashMap::new() }

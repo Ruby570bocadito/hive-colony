@@ -7,12 +7,12 @@ use std::time::Duration;
 
 // Agent binaries embedded at compile time
 #[cfg(target_os = "windows")]
-mod bins {
-    pub const WORKER: &[u8] = include_bytes!("../../target/release/worker.exe");
-    pub const DRONE: &[u8] = include_bytes!("../../target/release/drone.exe");
-    pub const HONEYBEE: &[u8] = include_bytes!("../../target/release/honeybee.exe");
-    pub const WEAVER: &[u8] = include_bytes!("../../target/release/weaver.exe");
-    pub const QUEEN: &[u8] = include_bytes!("../../target/release/queen.exe");
+mod embedded {
+    pub const WORKER: &[u8] = include_bytes!("../../target/x86_64-pc-windows-gnu/release/worker.exe");
+    pub const DRONE: &[u8] = include_bytes!("../../target/x86_64-pc-windows-gnu/release/drone.exe");
+    pub const HONEYBEE: &[u8] = include_bytes!("../../target/x86_64-pc-windows-gnu/release/honeybee.exe");
+    pub const WEAVER: &[u8] = include_bytes!("../../target/x86_64-pc-windows-gnu/release/weaver.exe");
+    pub const QUEEN: &[u8] = include_bytes!("../../target/x86_64-pc-windows-gnu/release/queen.exe");
 }
 #[cfg(not(target_os = "windows"))]
 mod bins {
@@ -55,12 +55,12 @@ fn main() {
             child
         };
 
-        let _s = launch("worker", bins::WORKER);
+        let _s = launch("worker", embedded::WORKER);
         thread::sleep(Duration::from_secs(2));
-        let _sh = launch("drone", bins::DRONE);
-        let _h = launch("honeybee", bins::HONEYBEE);
-        let _w = launch("weaver", bins::WEAVER);
-        let _o = launch("queen", bins::QUEEN);
+        let _sh = launch("drone", embedded::DRONE);
+        let _h = launch("honeybee", embedded::HONEYBEE);
+        let _w = launch("weaver", embedded::WEAVER);
+        let _o = launch("queen", embedded::QUEEN);
     }
 
     info!("Deployment complete. Swarm active via shared-memory IPC.");

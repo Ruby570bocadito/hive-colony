@@ -82,7 +82,7 @@ impl WeaverAgent {
             // 30% chance to insert a NOP sled (1-8 bytes)
             if rng.gen_bool(0.3) && i + 8 < input.len() {
                 let nop_len = rng.gen_range(1..=8);
-                output.extend(std::iter::repeat(0x90u8).take(nop_len)); // x86 NOP
+                output.extend(std::iter::repeat_n(0x90u8, nop_len)); // x86 NOP
                 output.push(input[i]);
                 i += 1;
             } else {

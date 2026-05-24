@@ -224,7 +224,7 @@ fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::new();
     for chunk in data.chunks(3) {
-        let b0 = chunk.get(0).copied().unwrap_or(0) as u32;
+        let b0 = chunk.first().copied().unwrap_or(0) as u32;
         let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
         let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
         let triple = (b0 << 16) | (b1 << 8) | b2;

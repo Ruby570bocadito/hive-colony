@@ -1,0 +1,23 @@
+[workspace]
+
+[package]
+name = "hive_base-fuzz"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+hive_base = { path = ".." }
+serde_json = "1"
+rmp-serde = "1"
+
+[[bin]]
+name = "ipc_contract_validate"
+path = "fuzz_targets/ipc_contract_validate.rs"
+
+[[bin]]
+name = "ring_buffer_ops"
+path = "fuzz_targets/ring_buffer_ops.rs"

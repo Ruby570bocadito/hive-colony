@@ -152,7 +152,7 @@ impl DroneAgent {
         let dir = env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())).unwrap_or_else(|| ".".into());
         let arena = env::var("__HIVE_ARENA").unwrap_or_default();
         let mut found = None;
-        for candidate in &[dir.join(name), dir.join(&format!("target/debug/{}", name))] {
+        for candidate in &[dir.join(name), dir.join(format!("target/debug/{}", name))] {
             if candidate.exists() { found = Some(candidate.clone()); break; }
         }
         let path = match found { Some(p) => p, None => { warn!("Drone: cannot find {} binary", name); return; } };

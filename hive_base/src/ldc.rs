@@ -200,7 +200,7 @@ mod tests {
     #[test]
     fn test_heartbeat_message() {
         let (id, role) = test_agent();
-        let msg = Message::heartbeat(id, role.clone());
+        let msg = Message::heartbeat(id, role);
         assert_eq!(msg.agent_id, id);
         assert_eq!(msg.agent_role, role);
         assert!(matches!(msg.payload, Payload::Heartbeat));
@@ -210,7 +210,7 @@ mod tests {
     #[test]
     fn test_belief_message() {
         let (id, role) = test_agent();
-        let msg = Message::belief(id, role.clone(), "edr".into(), Value::Bool(true), 0.95);
+        let msg = Message::belief(id, role, "edr".into(), Value::Bool(true), 0.95);
         assert_eq!(msg.agent_id, id);
         assert_eq!(msg.agent_role, role);
         match &msg.payload {
@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn test_proposal_message() {
         let (id, role) = test_agent();
-        let (msg, proposal_id) = Message::proposal(id, role.clone(), "encrypt".into(), "target secured".into());
+        let (msg, proposal_id) = Message::proposal(id, role, "encrypt".into(), "target secured".into());
         assert_eq!(msg.agent_id, id);
         match &msg.payload {
             Payload::Proposal { action, argument, proposal_id: pid } => {
@@ -242,7 +242,7 @@ mod tests {
     fn test_vote_message() {
         let (id, role) = test_agent();
         let proposal_id = Uuid::new_v4();
-        let msg = Message::vote(id, role.clone(), proposal_id, Decision::Support, 1.5);
+        let msg = Message::vote(id, role, proposal_id, Decision::Support, 1.5);
         match &msg.payload {
             Payload::Vote { proposal_id: pid, decision, weight } => {
                 assert_eq!(*pid, proposal_id);
@@ -257,7 +257,7 @@ mod tests {
     fn test_status_event_message() {
         let (id, role) = test_agent();
         let subject = Uuid::new_v4();
-        let msg = Message::status_event(id, role.clone(), "agent_dead", subject, Role::Worker, "no heartbeat");
+        let msg = Message::status_event(id, role, "agent_dead", subject, Role::Worker, "no heartbeat");
         match &msg.payload {
             Payload::StatusEvent { event_type, subject_id, subject_role, detail } => {
                 assert_eq!(event_type, "agent_dead");
@@ -295,10 +295,10 @@ mod tests {
     fn test_all_belief_value_types() {
         let (id, role) = test_agent();
         
-        let msg_bool = Message::belief(id, role.clone(), "a".into(), Value::Bool(true), 1.0);
-        let msg_str = Message::belief(id, role.clone(), "b".into(), Value::String("hi".into()), 1.0);
-        let msg_int = Message::belief(id, role.clone(), "c".into(), Value::Int(42), 1.0);
-        let msg_float = Message::belief(id, role.clone(), "d".into(), Value::Float(3.14), 1.0);
+        let msg_bool = Message::belief(id, role, "a".into(), Value::Bool(true), 1.0);
+        let msg_str = Message::belief(id, role, "b".into(), Value::String("hi".into()), 1.0);
+        let msg_int = Message::belief(id, role, "c".into(), Value::Int(42), 1.0);
+        let msg_float = Message::belief(id, role, "d".into(), Value::Float(std::f64::consts::PI), 1.0);
 
         for msg in &[msg_bool, msg_str, msg_int, msg_float] {
             let bytes = rmp_serde::to_vec(msg).expect("serialize");
@@ -319,8 +319,8 @@ mod tests {
     #[test]
     fn test_multiple_proposals_unique_ids() {
         let (id, role) = test_agent();
-        let (_, p1) = Message::proposal(id, role.clone(), "a".into(), "arg".into());
-        let (_, p2) = Message::proposal(id, role.clone(), "b".into(), "arg".into());
+        let (_, p1) = Message::proposal(id, role, "a".into(), "arg".into());
+        let (_, p2) = Message::proposal(id, role, "b".into(), "arg".into());
         assert_ne!(p1, p2, "Proposal IDs must be unique");
     }
 }

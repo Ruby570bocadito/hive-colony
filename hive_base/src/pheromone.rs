@@ -23,6 +23,12 @@ pub struct PheromoneMap {
     pub verification_bonus: f32,    // bonus per verifying agent
 }
 
+impl Default for PheromoneMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PheromoneMap {
     pub fn new() -> Self {
         Self {

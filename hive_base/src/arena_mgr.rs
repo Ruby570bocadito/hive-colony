@@ -200,10 +200,7 @@ pub fn connect_to_arena() -> io::Result<SharedArenaMapping> {
 
     // Try anonymous memfd first (parent-child scenario)
     if cfg!(target_os = "linux") {
-        match SharedArenaMapping::create_or_open(None) {
-            Ok(mapping) => return Ok(mapping),
-            Err(_) => {}
-        }
+        if let Ok(mapping) = SharedArenaMapping::create_or_open(None) { return Ok(mapping) }
     }
 
     // Generate a random name for cross-process discovery

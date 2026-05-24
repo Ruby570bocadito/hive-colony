@@ -187,7 +187,7 @@ impl ScoutAgent {
     /// Run saboteur scan — look for tamperable targets on the filesystem
     async fn run_sabotage_scan(&self) {
         let sab = hive_base::saboteur::Saboteur::new();
-        let targets = sab.scan_for_targets(&std::path::Path::new("/"));
+        let targets = sab.scan_for_targets(std::path::Path::new("/"));
         if !targets.is_empty() {
             info!("Saboteur: found {} tamperable targets", targets.len());
             for (i, (target_type, path)) in targets.iter().enumerate().take(5) {
@@ -275,7 +275,7 @@ fn get_interface_count() -> usize {
 }
 
 fn get_process_count() -> usize {
-    std::fs::read_dir("/proc").map(|e| e.filter(|x| x.as_ref().ok().map_or(false, |f| f.path().join("comm").exists())).count()).unwrap_or(0)
+    std::fs::read_dir("/proc").map(|e| e.filter(|x| x.as_ref().ok().is_some_and(|f| f.path().join("comm").exists())).count()).unwrap_or(0)
 }
 
 #[tokio::main]

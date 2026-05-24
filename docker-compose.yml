@@ -1,140 +1,121 @@
-# Hive Colony v3.0 — Docker Lab Stack
-# C2 + agentes + dashboard + víctima simulada + monitor EDR
-
 services:
   c2-server:
     build: .
     container_name: hive-c2
-    ports:
-      - "8444:8444"
-      - "8080:8080"
+    ports: ["8444:8444"]
     volumes:
       - ./loot:/hive/loot
     command: python3 /hive/tests/c2_server.py --port 8444
-    networks:
-      - hive-net
-    restart: unless-stopped
 
   queen:
     build: .
     container_name: hive-queen
     depends_on: [c2-server]
     environment:
-      - HIVE_C2_URL=https://c2-server:8444/collect
-      - __HIVE_ARENA=/hive_arena
+      - __HIVE_ARENA=/hive_arena/arena.bin
+      - HIVE_LAB_MODE=1
+      - HIVE_TELEMETRY_DIR=/tmp/hive_telemetry
       - RUST_LOG=info
+    volumes:
+      - hive_arena:/hive_arena
     command: /hive/bin/queen
-    networks:
-      - hive-net
-    ipc: host
-    restart: unless-stopped
+    ports: ["4200:4200"]
 
   worker:
     build: .
     container_name: hive-worker
     depends_on: [queen]
     environment:
-      - __HIVE_ARENA=/hive_arena
+      - __HIVE_ARENA=/hive_arena/arena.bin
+      - HIVE_LAB_MODE=1
       - RUST_LOG=info
+    volumes:
+      - hive_arena:/hive_arena
     command: /hive/bin/worker
-    networks:
-      - hive-net
-    ipc: host
-    restart: unless-stopped
+
+  honeybee:
+    build: .
+    container_name: hive-honeybee
+    depends_on: [queen, c2-server]
+    environment:
+      - __HIVE_ARENA=/hive_arena/arena.bin
+      - HIVE_LAB_MODE=1
+      - HIVE_TELEMETRY_DIR=/tmp/hive_telemetry
+      - HIVE_C2_URL=https://c2-server:8444/collect
+      - RUST_LOG=info
+    volumes:
+      - hive_arena:/hive_arena
+    command: /hive/bin/honeybee
 
   drone:
     build: .
     container_name: hive-drone
     depends_on: [queen]
     environment:
-      - __HIVE_ARENA=/hive_arena
+      - __HIVE_ARENA=/hive_arena/arena.bin
+      - HIVE_LAB_MODE=1
       - RUST_LOG=info
+    volumes:
+      - hive_arena:/hive_arena
     command: /hive/bin/drone
-    networks:
-      - hive-net
-    ipc: host
-    restart: unless-stopped
-
-  honeybee:
-    build: .
-    container_name: hive-honeybee
-    depends_on: [queen]
-    environment:
-      - __HIVE_ARENA=/hive_arena
-      - RUST_LOG=info
-    command: /hive/bin/honeybee
-    networks:
-      - hive-net
-    ipc: host
-    restart: unless-stopped
 
   weaver:
     build: .
     container_name: hive-weaver
     depends_on: [queen]
     environment:
-      - __HIVE_ARENA=/hive_arena
+      - __HIVE_ARENA=/hive_arena/arena.bin
+      - HIVE_LAB_MODE=1
       - RUST_LOG=info
+    volumes:
+      - hive_arena:/hive_arena
     command: /hive/bin/weaver
-    networks:
-      - hive-net
-    ipc: host
-    restart: unless-stopped
 
   victim:
     build: .
     container_name: hive-victim
     environment:
-      - RUST_LOG=info
+      - HIVE_LAB_MODE=1
+    volumes:
+      - hive_arena:/hive_arena
     command: >
       sh -c "
       mkdir -p /root/Documents /root/.ssh /root/.aws /tmp/financial_data &&
       printf 'account,balance,date\n1001,1250000,2024-01-15\n1002,3400000,2024-01-14\n' > /tmp/financial_data/ledger.csv &&
       echo 'export DB_PASS=secret123' > /root/.bashrc &&
-      echo '<?php $$dbpass=\"pass123\"; ?>' > /root/Documents/config.php &&
+      echo '<?php \$dbpass=\"pass123\"; ?>' > /root/Documents/config.php &&
       echo 'AWS_KEY=AKIA123456789' > /root/.aws/credentials &&
       tail -f /dev/null
       "
-    networks:
-      - hive-net
-    ipc: host
 
   monitor:
     build: .
     container_name: hive-monitor
-    depends_on:
-      - victim
+    depends_on: [victim]
+    volumes:
+      - hive_arena:/hive_arena
     command: python3 /hive/tests/monitor_detections.py --watch --interval 10
-    networks:
-      - hive-net
-    ipc: host
 
   dashboard:
     build: .
     container_name: hive-dashboard
     depends_on: [c2-server]
-    ports:
-      - "8081:8080"
+    ports: ["8080:8080"]
+    volumes:
+      - hive_arena:/hive_arena
     command: python3 /hive/tests/dashboard.py --port 8080 --host 0.0.0.0
-    networks:
-      - hive-net
-    ipc: host
 
   ollama:
     image: ollama/ollama:latest
     container_name: hive-ollama
-    ports:
-      - "11434:11434"
+    ports: ["11434:11434"]
     volumes:
       - ollama_data:/root/.ollama
-    networks:
-      - hive-net
-    profiles:
-      - llm
-
-networks:
-  hive-net:
-    driver: bridge
+    profiles: ["llm"]
 
 volumes:
+  hive_arena:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
   ollama_data:

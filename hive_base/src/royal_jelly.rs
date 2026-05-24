@@ -65,6 +65,12 @@ pub struct JellyManager {
     pub directives: HashMap<Uuid, RoyalJelly>,
 }
 
+impl Default for JellyManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JellyManager {
     pub fn new() -> Self { Self { directives: HashMap::new() } }
 
@@ -76,7 +82,7 @@ impl JellyManager {
 
     pub fn get_active(&self, now_secs: u64) -> Vec<&RoyalJelly> {
         self.directives.values()
-            .filter(|j| now_secs < j.issued_by.as_u64_pair().0 + j.ttl_seconds as u64)
+            .filter(|j| now_secs < j.issued_by.as_u64_pair().0 + j.ttl_seconds)
             .collect()
     }
 

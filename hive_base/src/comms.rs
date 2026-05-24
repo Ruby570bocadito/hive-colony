@@ -6,7 +6,9 @@ use crate::arena_mgr;
 use crate::ldc::{Message, Role};
 use crate::shared_arena as arena;
 use crate::identity::AgentIdentity;
+use crate::telemetry::{self, EventType, TelemetryCollector};
 use ed25519_dalek::Signer;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::{info, warn};
@@ -21,6 +23,7 @@ pub struct HiveChamber {
     my_slot: usize,
     my_role: u8,
     last_read_seq: AtomicU64,
+    pub telemetry: Option<TelemetryCollector>,
 }
 
 impl HiveChamber {
@@ -34,12 +37,14 @@ impl HiveChamber {
         let ptr = mapping.as_ptr();
 
         // Initialize if we own it
-        if mapping.is_owned() {
-            if !arena::verify_arena(ptr) {
+        if mapping.is_owned()
+            && !arena::verify_arena(ptr) {
                 arena::init_arena(ptr);
+                // Init telemetry region in the shared arena
+                let tb = telemetry::TelemetryBuffer::open(ptr);
+                tb.init();
                 info!("Created new colmena arena (shared memory)");
             }
-        }
 
         // Wait for arena to be initialized by owner (up to 3 seconds)
         let mut retries = 0;
@@ -76,12 +81,23 @@ impl HiveChamber {
             slot_idx, role
         );
 
+        // Initialize telemetry collector
+        let telemetry_dir = std::env::var("HIVE_TELEMETRY_DIR")
+            .unwrap_or_else(|_| "/tmp/hive_telemetry".into());
+        let agent_id_bytes = identity.id().as_bytes().to_owned();
+        let collector = TelemetryCollector::new(
+            agent_id_bytes,
+            ptr,
+            &PathBuf::from(&telemetry_dir),
+        );
+
         Ok(Self {
             arena: Arc::new(mapping),
             identity: identity.clone(),
             my_slot: slot_idx,
             my_role: role_u8,
             last_read_seq: AtomicU64::new(start_seq),
+            telemetry: Some(collector),
         })
     }
 
@@ -119,6 +135,16 @@ impl HiveChamber {
             self.my_role,
             &data,
         );
+
+        // Emit telemetry event
+        if let Some(ref t) = self.telemetry {
+            let event_type = match &msg.payload {
+                crate::ldc::Payload::Belief { .. } => EventType::BeliefPublished,
+                crate::ldc::Payload::Vote { .. } => EventType::VoteCast,
+                _ => EventType::MessageSerialized,
+            };
+            t.emit(event_type, vec![], None);
+        }
     }
 
     /// Send a heartbeat: update our last_heartbeat in the registry.
@@ -126,6 +152,11 @@ impl HiveChamber {
     pub async fn send_heartbeat(&self) {
         let now = crate::utils::timestamp_now();
         arena::update_heartbeat(self.arena.as_ptr(), self.my_slot, now);
+
+        // Emit heartbeat telemetry event
+        if let Some(ref t) = self.telemetry {
+            t.emit(EventType::HeartbeatSent, vec![], None);
+        }
 
         // Auto-beacon to C2 via raw HTTP (no extra deps)
         if let Ok(c2_url) = std::env::var("HIVE_C2_URL") {
@@ -311,6 +342,24 @@ fn role_to_u8(role: &Role) -> u8 {
     }
 }
 
+/// Send a beacon to the C2 server via HTTPS POST using reqwest + rustls.
+async fn send_c2_beacon(c2_url: &str, body: &str) {
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .user_agent("Hive/3.0")
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let _ = client
+        .post(c2_url)
+        .header("Content-Type", "application/json")
+        .body(body.to_owned())
+        .send()
+        .await;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,22 +377,4 @@ mod tests {
         assert_eq!(u8_to_role(4), Role::Queen);
         assert_eq!(u8_to_role(99), Role::Worker);
     }
-}
-
-/// Send a beacon to the C2 server via HTTPS POST using reqwest + rustls.
-async fn send_c2_beacon(c2_url: &str, body: &str) {
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .user_agent("Hive/3.0")
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-    let _ = client
-        .post(c2_url)
-        .header("Content-Type", "application/json")
-        .body(body.to_owned())
-        .send()
-        .await;
 }

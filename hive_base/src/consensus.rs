@@ -80,7 +80,7 @@ impl ConsensusEngine {
         let record = self.proposals.get(proposal_id)?;
         let mut total_weight = 0.0f32;
         let mut support_weight = 0.0f32;
-        for (_voter_id, (decision, weight)) in &record.votes {
+        for (decision, weight) in record.votes.values() {
             total_weight += weight;
             if matches!(decision, Decision::Support) {
                 support_weight += weight;

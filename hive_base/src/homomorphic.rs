@@ -11,7 +11,7 @@ use rand::Rng;
 /// Simplified additive homomorphic encryption (demonstration).
 /// Enc(v1) + Enc(v2) = Enc(v1 + v2).
 /// This allows the colony to tally votes without revealing who voted what.
-
+///
 /// Paillier-style simplified keypair.
 pub struct HomoKeypair {
     pub n: u64,       // modulus (product of two primes, simplified)
@@ -129,6 +129,8 @@ mod tests {
 
     #[test]
     fn test_tally_votes() {
+        static SERIAL: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        let _guard = SERIAL.get_or_init(|| std::sync::Mutex::new(())).lock().unwrap();
         let kp = HomoKeypair::generate();
         let votes: Vec<u64> = vec![1, 1, 0, 1, 1]; // 4 support, 1 reject
         let encrypted_votes: Vec<u64> = votes.iter().map(|v| kp.encrypt(*v)).collect();
@@ -139,6 +141,8 @@ mod tests {
 
     #[test]
     fn test_encrypted_zero_doesnt_change_tally() {
+        static SERIAL: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        let _guard = SERIAL.get_or_init(|| std::sync::Mutex::new(())).lock().unwrap();
         let kp = HomoKeypair::generate();
         let votes: Vec<u64> = vec![1, 0, 1, 0, 1];
         let encrypted: Vec<u64> = votes.iter().map(|v| kp.encrypt(*v)).collect();

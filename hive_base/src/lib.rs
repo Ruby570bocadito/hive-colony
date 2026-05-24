@@ -54,6 +54,9 @@ pub mod chrononaut;
 pub mod phoenix;
 pub mod hivemind;
 pub mod whispernet;
+pub mod telemetry;
+pub mod chaos;
+pub mod ipc_contract;
 
 pub use comms::HiveChamber;
 pub use identity::AgentIdentity;

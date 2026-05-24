@@ -49,12 +49,18 @@ fn main() {
 
     info!("Shutting down...");
     let _ = scout.kill();
+    let _ = scout.wait();
     let _ = shaper.kill();
+    let _ = shaper.wait();
     let _ = hoarder.kill();
+    let _ = hoarder.wait();
     let _ = weaver.kill();
+    let _ = weaver.wait();
     let _ = overmind.kill();
+    let _ = overmind.wait();
     if let Some(mut w) = worm {
         let _ = w.kill();
+        let _ = w.wait();
     }
     info!("Done.");
 }

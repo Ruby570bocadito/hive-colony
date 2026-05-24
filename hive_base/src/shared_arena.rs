@@ -4,6 +4,11 @@
 //
 // Cross-process: uses shm_open with random name on Linux.
 // All agents mmap the same region and communicate via lock-free atomics.
+//
+// All public functions accept raw pointers intentionally — callers
+// obtain valid pointers via arena_mgr::SharedArenaMapping.
+
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::mem;
@@ -118,6 +123,7 @@ pub fn read_slot_seq(slot: *const MessageSlot) -> u64 {
     unsafe { (*slot).seq.load(Ordering::Acquire) }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn write_message_slot(
     slot: *mut MessageSlot,
     seq: u64,
@@ -261,8 +267,57 @@ pub fn generate_arena_name() -> String {
 }
 
 pub fn arena_size() -> usize {
-    let sz = arena_layout_size();
+    let sz = arena_layout_size() + TELEMETRY_REGION_SIZE;
     (sz + 4095) & !4095
+}
+
+// ── telemetry region (appended after message slots) ─────────────────────
+
+/// Size of the telemetry ring buffer data area (4 MB)
+pub const TELEMETRY_BUFFER_SIZE: usize = 4 * 1024 * 1024;
+
+/// Offset from arena start where telemetry region begins
+pub fn telemetry_region_offset() -> usize {
+    let sz = arena_layout_size();
+    (sz + 63) & !63  // align to 64 bytes
+}
+
+/// Total telemetry region size (header + data buffer)
+pub const TELEMETRY_REGION_SIZE: usize = 64 + TELEMETRY_BUFFER_SIZE;
+
+#[repr(C, align(64))]
+pub struct TelemetryHeader {
+    pub write_cursor: AtomicU64,
+    pub read_cursor: AtomicU64,
+    pub _pad: [u8; 48],
+}
+
+pub fn telemetry_header_ref(ptr: *const u8) -> &'static TelemetryHeader {
+    unsafe {
+        let offset = telemetry_region_offset();
+        &*(ptr.add(offset) as *const TelemetryHeader)
+    }
+}
+
+pub fn telemetry_header_mut(ptr: *mut u8) -> &'static mut TelemetryHeader {
+    unsafe {
+        let offset = telemetry_region_offset();
+        &mut *(ptr.add(offset) as *mut TelemetryHeader)
+    }
+}
+
+pub fn telemetry_data_ptr(ptr: *const u8) -> *const u8 {
+    unsafe {
+        let offset = telemetry_region_offset() + 64;
+        ptr.add(offset)
+    }
+}
+
+pub fn telemetry_data_mut(ptr: *mut u8) -> *mut u8 {
+    unsafe {
+        let offset = telemetry_region_offset() + 64;
+        ptr.add(offset)
+    }
 }
 
 #[cfg(test)]
@@ -272,10 +327,12 @@ mod tests {
 
     #[test]
     fn test_arena_constants() {
-        assert!(MAX_AGENTS >= 8);
-        assert!(MAX_MESSAGES >= 512);
-        assert!(MAX_MSG_SIZE >= 4096);
-        assert!(HEARTBEAT_TIMEOUT_SECS >= 10);
+        const _: () = {
+            assert!(MAX_AGENTS >= 8);
+            assert!(MAX_MESSAGES >= 512);
+            assert!(MAX_MSG_SIZE >= 4096);
+            assert!(HEARTBEAT_TIMEOUT_SECS >= 10);
+        };
     }
 
     #[test]

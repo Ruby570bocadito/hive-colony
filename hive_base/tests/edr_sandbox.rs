@@ -10,12 +10,13 @@ fn test_no_tcp_ports_open() {
     let ports = [4242, 1337, 31337, 4444, 5555];
     for &port in &ports {
         let addr = format!("127.0.0.1:{}", port);
-        match TcpStream::connect_timeout(
+        if TcpStream::connect_timeout(
             &addr.parse().unwrap(),
             Duration::from_millis(500),
-        ) {
-            Ok(_) => panic!("PORT {} IS OPEN! TCP bus leak detected!", port),
-            Err(_) => {} // Expected
+        )
+        .is_ok()
+        {
+            panic!("PORT {} IS OPEN! TCP bus leak detected!", port);
         }
     }
 }
@@ -74,7 +75,7 @@ fn test_model_encrypt_decrypt_roundtrip() {
     }
 
     // Runtime decryption
-    let decrypted = hive_base::decrypt_model(&ct, &seed).unwrap();
+        let decrypted = decrypt_model(&ct, &seed).unwrap();
     assert_eq!(model_data, decrypted, "Model decryption round-trip failed");
 }
 

@@ -105,7 +105,7 @@ async fn cmd_status(arena: &str, watch: bool, interval: u64) {
     println!("  ║   HIVE COLONY — STATUS              ║");
     println!("  ╚══════════════════════════════════════╝\n");
 
-    let (id, chamber) = match connect(arena).await {
+    let (_id, chamber) = match connect(arena).await {
         Some(c) => c,
         None => return,
     };
@@ -152,7 +152,7 @@ async fn cmd_status(arena: &str, watch: bool, interval: u64) {
                 _ => "other".into(),
             };
             let color = role_color(&last.agent_role);
-            println!("  Latest: {color}{}{RESET} — {}", format!("{:?}", last.agent_role), desc);
+            println!("  Latest: {color}{:?}{RESET} — {}", last.agent_role, desc);
         }
 
         if !watch { break; }
@@ -196,7 +196,8 @@ async fn cmd_validate() {
     println!("  ║   EDR EVASION VALIDATION             ║");
     println!("  ╚══════════════════════════════════════╝\n");
 
-    let checks: Vec<(&str, &str, fn() -> bool)> = vec![
+    type CheckEntry = (&'static str, &'static str, fn() -> bool);
+    let checks: Vec<CheckEntry> = vec![
         ("TCP ports", "Ningún puerto TCP escuchando", || {
             std::net::TcpStream::connect_timeout(&"127.0.0.1:4242".parse().unwrap(), Duration::from_millis(200)).is_err()
         }),

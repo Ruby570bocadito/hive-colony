@@ -278,9 +278,11 @@ mod tests {
 
     #[test]
     fn test_mass_campaign() {
-        let mut ctx = VictimContext::default();
-        ctx.common_contacts = vec!["alice@corp.com".into(), "bob@corp.com".into(), "eve@corp.com".into()];
-        ctx.it_tools = vec!["Teams".into()];
+        let ctx = VictimContext {
+            common_contacts: vec!["alice@corp.com".into(), "bob@corp.com".into(), "eve@corp.com".into()],
+            it_tools: vec!["Teams".into()],
+            ..Default::default()
+        };
         let campaigns = mass_campaign(&ctx, "phish credentials");
         assert!(!campaigns.is_empty());
     }

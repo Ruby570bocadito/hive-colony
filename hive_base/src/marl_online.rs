@@ -18,6 +18,12 @@ pub struct OnlineMarl {
     pub total_reward: f32,
 }
 
+impl Default for OnlineMarl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OnlineMarl {
     pub fn new() -> Self {
         Self {
@@ -77,7 +83,7 @@ impl OnlineMarl {
         // Decay epsilon
         self.epsilon = (self.epsilon * 0.999).max(0.01);
 
-        if self.episodes % 100 == 0 {
+        if self.episodes.is_multiple_of(100) {
             info!("MARL_ONLINE: ep={} avg_reward={:.3} epsilon={:.3} table_size={}",
                 self.episodes, self.total_reward / self.episodes as f32,
                 self.epsilon, self.q_table.len());
@@ -85,6 +91,7 @@ impl OnlineMarl {
     }
 
     /// Record the result of an attack: success = positive reward, detection = negative.
+    #[allow(clippy::too_many_arguments)]
     pub fn record_attack_result(&mut self, previous_state: &[f32], action: usize,
                                  success: bool, detected: bool, value_score: f32,
                                  next_state: &[f32], num_actions: usize) {
@@ -154,6 +161,6 @@ mod tests {
 
         let mut marl2 = OnlineMarl::new();
         marl2.import_policies(&exported);
-        assert!(marl2.q_table.len() > 0);
+        assert!(!marl2.q_table.is_empty());
     }
 }

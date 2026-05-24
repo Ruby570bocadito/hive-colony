@@ -88,6 +88,12 @@ pub struct LarvaFactory {
     pub completed_count: u32,
 }
 
+impl Default for LarvaFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LarvaFactory {
     pub fn new() -> Self {
         Self { deployed_count: 0, completed_count: 0 }
@@ -99,8 +105,8 @@ impl LarvaFactory {
         let base = mission.to_payload();
 
         // Weaver-level obfuscation: randomize variable names, insert decoys
-        let obfuscated = Self::weaver_obfuscate_script(&base);
-        obfuscated
+        
+        Self::weaver_obfuscate_script(&base)
     }
 
     /// Weaver obfuscation for shell scripts: randomize, add decoy lines, encode.
@@ -113,9 +119,9 @@ impl LarvaFactory {
 
         // Insert decoy comments and variable assignments
         let decoys = [
-            format!("export LANG=C.UTF-8"),
-            format!("set +o history 2>/dev/null"),
-            format!("unalias -a 2>/dev/null"),
+            "export LANG=C.UTF-8".to_string(),
+            "set +o history 2>/dev/null".to_string(),
+            "unalias -a 2>/dev/null".to_string(),
             format!("RANDOM_SEED={}", rand::random::<u32>()),
         ];
         lines.extend(decoys.iter().cloned());

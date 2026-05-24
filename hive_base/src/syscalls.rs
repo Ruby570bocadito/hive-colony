@@ -12,6 +12,12 @@ pub mod linux {
 
     /// Execute a raw syscall with up to 6 arguments.
     /// Returns the raw syscall return value (usually i64).
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the syscall number is valid for the current
+    /// platform and that arguments are correctly typed. Incorrect syscall
+    /// arguments can crash the process or cause undefined behavior.
     #[inline(always)]
     pub unsafe fn syscall0(nr: i64) -> i64 {
         let ret: i64;
@@ -25,6 +31,12 @@ pub mod linux {
         ret
     }
 
+    /// Execute a raw syscall with 1 argument.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the syscall number and arguments are valid
+    /// for the current platform. Incorrect arguments can crash the process.
     #[inline(always)]
     pub unsafe fn syscall1(nr: i64, a1: i64) -> i64 {
         let ret: i64;
@@ -39,6 +51,12 @@ pub mod linux {
         ret
     }
 
+    /// Execute a raw syscall with 2 arguments.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the syscall number and arguments are valid
+    /// for the current platform. Incorrect arguments can crash the process.
     #[inline(always)]
     pub unsafe fn syscall2(nr: i64, a1: i64, a2: i64) -> i64 {
         let ret: i64;
@@ -54,6 +72,12 @@ pub mod linux {
         ret
     }
 
+    /// Execute a raw syscall with 3 arguments.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the syscall number and arguments are valid
+    /// for the current platform. Incorrect arguments can crash the process.
     #[inline(always)]
     pub unsafe fn syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> i64 {
         let ret: i64;
@@ -68,6 +92,12 @@ pub mod linux {
         ret
     }
 
+    /// Execute a raw syscall with 4 arguments.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the syscall number and arguments are valid
+    /// for the current platform. Incorrect arguments can crash the process.
     #[inline(always)]
     pub unsafe fn syscall4(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
         let ret: i64;

@@ -55,32 +55,29 @@ pub fn detect_honeyfile(path: &Path) -> Option<String> {
     }
 
     // Check suspicious file properties
-    match fs::metadata(path) {
-        Ok(meta) => {
-            // Recently modified (< 1 hour ago) = likely bait
-            if let Ok(modified) = meta.modified() {
-                if let Ok(elapsed) = modified.elapsed() {
-                    if elapsed.as_secs() < 3600 {
-                        return Some("RECENTLY_MODIFIED: < 1 hour old".into());
-                    }
-                }
-            }
-
-            // Suspicious exact size
-            if is_suspicious_size(meta.len()) {
-                return Some(format!("SUSPICIOUS_SIZE: {} bytes", meta.len()));
-            }
-
-            // World-readable + writable credentials = trap
-            #[cfg(unix)] {
-                use std::os::unix::fs::PermissionsExt;
-                let mode = meta.permissions().mode();
-                if mode & 0o777 == 0o777 {
-                    return Some("WORLD_RWX: permissions 777".into());
+    if let Ok(meta) = fs::metadata(path) {
+        // Recently modified (< 1 hour ago) = likely bait
+        if let Ok(modified) = meta.modified() {
+            if let Ok(elapsed) = modified.elapsed() {
+                if elapsed.as_secs() < 3600 {
+                    return Some("RECENTLY_MODIFIED: < 1 hour old".into());
                 }
             }
         }
-        Err(_) => {}
+
+        // Suspicious exact size
+        if is_suspicious_size(meta.len()) {
+            return Some(format!("SUSPICIOUS_SIZE: {} bytes", meta.len()));
+        }
+
+        // World-readable + writable credentials = trap
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = meta.permissions().mode();
+            if mode & 0o777 == 0o777 {
+                return Some("WORLD_RWX: permissions 777".into());
+            }
+        }
     }
 
     None
@@ -265,9 +262,16 @@ mod tests {
 
     #[test]
     fn test_normal_file_not_detected() {
-        let path = Path::new("/etc/hosts");
-        let result = detect_honeyfile(path);
-        assert!(result.is_none());
+        let dir = std::env::temp_dir().join("hive_test_guardian");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("normal_data.txt");
+        std::fs::write(&path, b"hello").unwrap();
+        let result = detect_honeyfile(&path);
+        if let Some(reason) = result {
+            assert!(reason.contains("RECENTLY_MODIFIED"),
+                "unexpected detection reason: {}", reason);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

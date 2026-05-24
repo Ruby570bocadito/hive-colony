@@ -32,6 +32,12 @@ pub struct HiveFederation {
     pub federation_id: Uuid,           // shared federation token
 }
 
+impl Default for HiveFederation {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HiveFederation {
     pub fn new() -> Self {
         Self {
@@ -55,7 +61,7 @@ impl HiveFederation {
 
         // Send via DNS lookup
         use std::net::ToSocketAddrs;
-        if let Ok(_) = format!("{}:0", query).to_socket_addrs() {
+        if format!("{}:0", query).to_socket_addrs().is_ok() {
             info!("FEDERATION: advertised via DNS: {}", &query[..40.min(query.len())]);
         }
     }
@@ -66,17 +72,17 @@ impl HiveFederation {
         for beacon in c2_beacons {
             if let Some(hive_tag) = beacon.get("hive_federation").and_then(|v| v.as_str()) {
                 let hive_id = Uuid::parse_str(hive_tag).unwrap_or_else(|_| Uuid::new_v4());
-                if !self.remote_hives.contains_key(&hive_id) {
+                self.remote_hives.entry(hive_id).or_insert_with(|| {
                     info!("FEDERATION: discovered remote hive {}", hive_id);
-                    self.remote_hives.insert(hive_id, RemoteHive {
+                    RemoteHive {
                         hive_id,
                         discovery_method: "c2_correlation".into(),
                         last_contact: crate::utils::timestamp_now(),
                         shared_hosts: Vec::new(),
                         shared_techniques: Vec::new(),
                         threat_level: 0.0,
-                    });
-                }
+                    }
+                });
             }
         }
     }

@@ -45,6 +45,12 @@ pub struct TournamentResult {
 
 pub struct Tournament;
 
+impl Default for Tournament {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Tournament {
     pub fn new() -> Self { Self }
 
@@ -52,16 +58,13 @@ impl Tournament {
         let mut competitors = Vec::new();
         let mut rng = rand::thread_rng();
 
-        let archetypes = vec![
-            ("Aggressor", vec![("marl_policy", "aggressive"), ("evasion", "minimal"), ("lateral", "eternalblue")]),
+        let archetypes = [("Aggressor", vec![("marl_policy", "aggressive"), ("evasion", "minimal"), ("lateral", "eternalblue")]),
             ("Ghost", vec![("marl_policy", "conservative"), ("evasion", "maximum"), ("lateral", "kerberoast")]),
             ("Hybrid", vec![("marl_policy", "balanced"), ("evasion", "adaptive"), ("lateral", "lolbins")]),
             ("Experimental", vec![("marl_policy", "exploratory"), ("evasion", "smoke_signals"), ("lateral", "dns_tunnel")]),
-            ("Veteran", vec![("marl_policy", "conservative"), ("evasion", "high"), ("lateral", "ssh_scp")]),
-        ];
+            ("Veteran", vec![("marl_policy", "conservative"), ("evasion", "high"), ("lateral", "ssh_scp")])];
 
-        for i in 0..config.competitors.min(archetypes.len()) {
-            let (name, policies) = &archetypes[i];
+        for (name, policies) in archetypes.iter().take(config.competitors.min(archetypes.len())) {
             let mut policy_map = HashMap::new();
             for (k, v) in policies {
                 policy_map.insert(k.to_string(), v.to_string());
@@ -217,8 +220,8 @@ impl Tournament {
 
             let winner_id = self.select_winner(&competitors);
             let runner_up_id = winner_id.and_then(|w| {
-                let ru = self.select_runner_up(&competitors, w);
-                ru
+                
+                self.select_runner_up(&competitors, w)
             });
 
             if gen + 1 < config.generations {
@@ -364,7 +367,7 @@ mod tests {
         assert_eq!(competitors.len(), 2);
         // Each competitor's policies should be valid HiveMind directive targets
         for c in &competitors {
-            for (key, _) in &c.policies {
+            for key in c.policies.keys() {
                 assert!(!key.is_empty(), "Policy key should not be empty");
             }
         }

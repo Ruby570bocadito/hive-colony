@@ -78,6 +78,12 @@ pub struct EphemeralFactory {
     pub deployed_count: u32,
 }
 
+impl Default for EphemeralFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EphemeralFactory {
     pub fn new() -> Self {
         Self { created_count: 0, deployed_count: 0 }

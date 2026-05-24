@@ -44,7 +44,7 @@ impl HiveResources {
 
         // Scale: 1 worker per 2 free cores, up to 4 max
         let headroom = ((100.0 - self.cpu_load_pct) / 25.0) as usize;
-        headroom.min(4).max(0)
+        headroom.min(4)
     }
 
     /// Check if we should reduce to minimum (Worker + Drone only).

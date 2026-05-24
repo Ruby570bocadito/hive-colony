@@ -164,7 +164,7 @@ pub fn read_trails_file() -> Vec<(String, Vec<u8>)> {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if name.starts_with(".hive_") || name.starts_with(".hx_") || name.starts_with(".hs_") {
-                    if let Ok(data) = std::fs::read(&entry.path()) {
+                    if let Ok(data) = std::fs::read(entry.path()) {
                         if data.len() < 10000 {
                             if let Some(decrypted) = decrypt_trail(&data) {
                                 trails.push((entry.path().display().to_string(), decrypted));

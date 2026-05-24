@@ -116,8 +116,8 @@ impl RandomForest {
             let leaf = tree.predict_leaf(features);
             let val_offset = leaf * self.n_classes as usize;
             if val_offset + self.n_classes as usize <= tree.value.len() {
-                for c in 0..self.n_classes as usize {
-                    proba_sum[c] += tree.value[val_offset + c];
+                for (c, sum) in proba_sum.iter_mut().enumerate().take(self.n_classes as usize) {
+                    *sum += tree.value[val_offset + c];
                 }
             }
         }

@@ -32,6 +32,12 @@ impl Channel {
     }
 }
 
+impl Default for ChannelRotator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChannelRotator {
     pub fn new() -> Self {
         Self {
