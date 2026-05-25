@@ -38,7 +38,7 @@ pip install -r requirements.txt
 
 | Comando | Qué hace |
 |---------|----------|
-| `./hive.sh dev` | Lanza 4 agentes en terminal (Worker+Drone+Honeybee+Weaver) |
+| `./hive.sh dev` | Lanza 6 agentes en terminal (Queen+Worker+Drone+Honeybee+Weaver+Swarm) |
 | `./hive.sh all` | Stack completo: C2 + dashboard + 6 agentes |
 | `./hive.sh docker` | Despliegue Docker Compose (colonia completa) |
 | `./hive.sh test` | Ejecuta tests unitarios (319+) |
