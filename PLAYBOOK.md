@@ -22,8 +22,8 @@
 ## Instalación
 
 ```bash
-git clone https://github.com/Ruby570bocadito/MalwareSwarm
-cd MalwareSwarm
+git clone https://github.com/Ruby570bocadito/hive-colony
+cd hive-colony
 source build_env.sh
 cargo build --release --workspace
 ```
