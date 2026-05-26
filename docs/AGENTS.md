@@ -2,25 +2,25 @@
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
-║                    HIVE COLONY — AGENTES                         ║
-║                                                                  ║
-║  ┌─────────┐                                                     ║
-║  │  QUEEN  │ ◀── Overmind: estrategia LLM + bridge C2           ║
-║  │  (1)    │                                                     ║
-║  └────┬────┘                                                     ║
-║       │                                                          ║
-║       ▼                                                          ║
-║  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐              ║
-║  │ WORKER  │  │  DRONE  │  │HONEYBEE │  │ WEAVER │               ║
-║  │ Scout   │  │ Shaper  │  │ Hoarder │  │  Morph  │              ║
-║  └─────────┘  └─────────┘  └─────────┘  └─────────┘              ║
-║       │                                                          ║
-║       ▼                                                          ║
-║  ┌─────────┐                                                     ║
-║  │  SWARM  │  Worm auto-propagante                               ║
-║  └─────────┘                                                     ║
-║                                                                  ║
-║  Todos se comunican vía ARENA (memoria compartida, sin TCP)      ║
+║                    HIVE COLONY — AGENTES                        ║
+║                                                                 ║
+║  ┌─────────┐                                                    ║
+║  │  QUEEN  │ ◀── Overmind: estrategia LLM + bridge C2          ║
+║  │  (1)    │                                                    ║
+║  └────┬────┘                                                    ║
+║       │                                                         ║
+║       ▼                                                         ║
+║  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐           ║
+║  │ WORKER  │  │  DRONE  │  │HONEYBEE │  │ WEAVER │           ║
+║  │ Scout   │  │ Shaper  │  │ Hoarder │  │  Morph  │           ║
+║  └─────────┘  └─────────┘  └─────────┘  └─────────┘           ║
+║       │                                                         ║
+║       ▼                                                         ║
+║  ┌─────────┐                                                    ║
+║  │  SWARM  │  Worm auto-propagante                             ║
+║  └─────────┘                                                    ║
+║                                                                 ║
+║  Todos se comunican vía ARENA (memoria compartida, sin TCP)    ║
 ╚══════════════════════════════════════════════════════════════════╝
 ```
 
@@ -43,15 +43,15 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │  QUEEN                                                          │
 │                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
-│  │ Ollama LLM   │───▶│ HiveMind     │───▶│ C2 Bridge   │       │
-│  │ (estratégico)│    │ consensus    │    │ HTTP / DNS   │       │
-│  └──────────────┘    └──────────────┘    │ ICMP / Dead  │       │
-│                                          └──────────────┘       │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
+│  │ Ollama LLM   │───▶│ HiveMind     │───▶│ C2 Bridge    │     │
+│  │ (estratégico)│    │ consensus    │    │ HTTP / DNS   │     │
+│  └──────────────┘    └──────────────┘    │ ICMP / Dead  │     │
+│                                          └──────────────┘     │
 │                                                                 │
 │  Receptor de órdenes del operador vía C2                        │
-│  Traductor entre LdC (Lenguaje de la Colmena) y C2 externo      │
-│  Orquestador: decide QUÉ hacer basado en creencias de Worker    │
+│  Traductor entre LdC (Lenguaje de la Colmena) y C2 externo     │
+│  Orquestador: decide QUÉ hacer basado en creencias de Worker   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,13 +71,13 @@
 ### Comunicación
 
 ```
-┌──────────┐     LdC (Arena)      ┌──────────┐
-│  Worker  │◀──────────────────▶ │  Queen   │
-│  Drone   │                      │          │
-│  Honeybee│                      │  C2 🡕    │
-│  Weaver  │                      │  HTTP    │
-│  Swarm   │                      │  DNS     │
-└──────────┘                      │  ICMP    │
+┌──────────┐     LdC (Arena)     ┌──────────┐
+│  Worker   │◀──────────────────▶│  Queen   │
+│  Drone    │                    │          │
+│  Honeybee │                    │  C2 🡕   │
+│  Weaver   │                    │  HTTP    │
+│  Swarm    │                    │  DNS     │
+└──────────┘                    │  ICMP    │
                                   │  Dead    │
                                   └──────────┘
 ```
@@ -196,18 +196,18 @@ edr_processes = ["csfalcon", "csagent", "msmpeng", "sentinelone",
 ┌─────────────────────────────────────────────────────────────────┐
 │  DRONE                                                          │
 │                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
-│  │ Lee          │───▶│ Decide      │───▶│ Ejecuta      │       │
-│  │ creencias    │    │ acción       │    │ movimiento   │       │
-│  │ de Worker    │    │ óptima       │    │ lateral      │       │
-│  └──────────────┘    └──────────────┘    └──────────────┘       │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
+│  │ Lee          │───▶│ Decide       │───▶│ Ejecuta      │     │
+│  │ creencias    │    │ acción       │    │ movimiento   │     │
+│  │ de Worker   │    │ óptima      │    │ lateral     │     │
+│  └──────────────┘    └──────────────┘    └──────────────┘     │
 │                                                                 │
 │  Estrategias:                                                   │
-│    • Colony mode → atacar TODO lo alcanzable                    │
-│    • Heuristic  → EDR? esperar. Backup? atacar backup.          │
-│    • MARL       → 62-dim state → Q-network                      │
+│    • Colony mode → atacar TODO lo alcanzable                   │
+│    • Heuristic  → EDR? esperar. Backup? atacar backup.         │
+│    • MARL       → 62-dim state → Q-network                    │
 │                                                                 │
-│  Si un Worker muere, Drone lo regenera via Weaver               │
+│  Si un Worker muere, Drone lo regenera via Weaver              │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -235,17 +235,17 @@ edr_processes = ["csfalcon", "csagent", "msmpeng", "sentinelone",
                                   ▼
                     ┌─────────────────────────┐
                     │   ¿EDR presente?        │
-                    │   ┌───┐    ┌───┐        │
-                    │   │ SI│    │ NO│        │
-                    │   └─┬─┘    └─┬─┘        │
-                    │     ▼        ▼          │
-                    │  Esperar   ¿Backup?     │
-                    │           ┌───┐ ┌───┐   │
-                    │           │ SI│ │ NO│   │
-                    │           └─┬─┘ └─┬─┘   │
-                    │             ▼     ▼     │
-                    │        Atacar  Propaga  │
-                    │        backup  a red    │
+                    │   ┌───┐    ┌───┐       │
+                    │   │ SI│    │ NO│       │
+                    │   └─┬─┘    └─┬─┘       │
+                    │     ▼        ▼         │
+                    │  Esperar   ¿Backup?    │
+                    │           ┌───┐ ┌───┐  │
+                    │           │ SI│ │ NO│  │
+                    │           └─┬─┘ └─┬─┘  │
+                    │             ▼     ▼    │
+                    │        Atacar  Propaga │
+                    │        backup  a red   │
                     └─────────────────────────┘
 ```
 
@@ -278,13 +278,13 @@ max_concurrent_infections = 5
 ┌─────────────────────────────────────────────────────────────────┐
 │  HONEYBEE                                                       │
 │                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
-│  │ Busca        │───▶│ Cifra        │───▶│ Exfiltra     │      │
-│  │ targets:     │    │ AES-256-GCM  │    │ vía HTTP C2  │       │
-│  │ Documentos   │    │ 3-pass wipe  │    │ ┌──────────┐ │       │
-│  │ .ssh, .aws   │    │              │    │ │ C2 Queue │ │       │
-│  │ .config      │    │              │    │ └──────────┘ │       │
-│  └──────────────┘    └──────────────┘    └──────────────┘       │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
+│  │ Busca        │───▶│ Cifra        │───▶│ Exfiltra     │     │
+│  │ targets:     │    │ AES-256-GCM  │    │ vía HTTP C2  │     │
+│  │ Documentos   │    │ 3-pass wipe  │    │ ┌──────────┐ │     │
+│  │ .ssh, .aws   │    │              │    │ │ C2 Queue │ │     │
+│  │ .config      │    │              │    │ └──────────┘ │     │
+│  └──────────────┘    └──────────────┘    └──────────────┘     │
 │                                                                 │
 │  Solo ejecuta con consenso ≥80% (HiveMind)                      │
 │  Soporta: privesc (SUID, sudo, Docker, PwnKit)                  │
@@ -314,8 +314,8 @@ max_concurrent_infections = 5
 │  ARCHIVO CIFRADO                                                │
 │                                                                 │
 │  ┌──────────────────────────────┬────────────────────────────┐  │
-│  │  Nonce (12 bytes)            │  AES-256-GCM ciphertext    │  │
-│  │  (aleatorio por archivo)     │  + authentication tag      │  │
+│  │  Nonce (12 bytes)           │  AES-256-GCM ciphertext    │  │
+│  │  (aleatorio por archivo)    │  + authentication tag      │  │
 │  └──────────────────────────────┴────────────────────────────┘  │
 │                                                                 │
 │  La key existe SOLO en memoria del agente.                      │

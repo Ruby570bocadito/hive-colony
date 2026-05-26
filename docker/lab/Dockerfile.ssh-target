@@ -1,0 +1,43 @@
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssh-server \
+    sudo \
+    curl \
+    netcat-openbsd \
+    iproute2 \
+    passwd \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /var/run/sshd
+
+# Set root password
+RUN printf 'root:toor' | chpasswd
+
+# Create admin user
+RUN useradd -m admin 2>/dev/null; printf 'admin:admin123' | chpasswd
+
+# Configure SSH
+RUN sed -i 's/.*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    sed -i 's/.*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
+    sed -i 's/.*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config && \
+    sed -i 's/.*PermitEmptyPasswords.*/PermitEmptyPasswords no/' /etc/ssh/sshd_config && \
+    echo "UsePAM no" >> /etc/ssh/sshd_config && \
+    echo "LogLevel DEBUG" >> /etc/ssh/sshd_config
+
+# SSH authorized_keys
+RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
+COPY docker/lab/authorized_keys /root/.ssh/authorized_keys
+RUN chmod 600 /root/.ssh/authorized_keys
+
+# Mock sensitive data
+RUN mkdir -p /root/Documents /root/.aws /tmp/financial_data /var/backups /opt/services && \
+    printf 'account,balance,date\n1001,1250000,2024-01-15\n1002,3400000,2024-01-14\n' > /tmp/financial_data/ledger.csv && \
+    printf '<?php $$dbpass="super_secret_db_pass"; ?>' > /root/Documents/config.php && \
+    printf 'AWS_ACCESS_KEY=AKIA123456789EXAMPLE\nAWS_SECRET_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' > /root/.aws/credentials && \
+    printf 'DB_PASS=oracle_prod_2024' > /root/Documents/db_creds.txt && \
+    chmod 600 /root/.aws/credentials
+
+EXPOSE 22
+
+CMD ["/usr/sbin/sshd", "-D", "-o", "ListenAddress=0.0.0.0"]

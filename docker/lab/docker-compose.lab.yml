@@ -1,0 +1,253 @@
+# Hive Colony v3.0 — Laboratorio de verificación
+# Targets SSH + Ollama LLM para pruebas end-to-end
+services:
+
+  # ── Objetivos SSH (lateral movement) ──
+  target-web:
+    build:
+      context: ../..
+      dockerfile: docker/lab/Dockerfile.ssh-target
+    container_name: hive-target-web
+    hostname: target-web
+    networks: [hive-net]
+    ports: ["2201:22"]
+    volumes:
+      - target_keys:/root/.ssh
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "22"]
+      interval: 5s
+      retries: 10
+
+  target-db:
+    build:
+      context: ../..
+      dockerfile: docker/lab/Dockerfile.ssh-target
+    container_name: hive-target-db
+    hostname: target-db
+    networks: [hive-net]
+    ports: ["2202:22"]
+    volumes:
+      - target_keys:/root/.ssh
+    depends_on: [target-web]
+
+  target-backup:
+    build:
+      context: ../..
+      dockerfile: docker/lab/Dockerfile.ssh-target
+    container_name: hive-target-backup
+    hostname: target-backup
+    networks: [hive-net]
+    ports: ["2203:22"]
+    volumes:
+      - target_keys:/root/.ssh
+    depends_on: [target-web]
+
+  # ── C2 Server ──
+  c2-server:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: hive-c2
+    hostname: c2-server
+    networks: [hive-net]
+    ports: ["8444:8444"]
+    volumes:
+      - ../../loot:/hive/loot
+    command: /hive/bin/c2-server --port 8444 --loot-dir /hive/loot --db-path /hive/c2.db
+
+  # ── Arena compartida ──
+  arena:
+    image: alpine:latest
+    container_name: hive-arena
+    hostname: hive-arena
+    networks: [hive-net]
+    volumes:
+      - hive_arena:/dev/shm
+    command: sh -c "dd if=/dev/zero of=/dev/shm/hive_arena bs=1M count=22 2>/dev/null && tail -f /dev/null"
+
+  # ── Reina (orquestadora + LLM) ──
+  queen:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: hive-queen
+    hostname: hive-queen
+    depends_on: [c2-server, arena, ollama]
+    networks: [hive-net]
+    environment:
+      - __HIVE_ARENA=hive_arena
+      - HIVE_TELEMETRY_DIR=/tmp/hive_telemetry
+      - HIVE_C2_URL=http://c2-server:8444/collect
+      - HIVE_C2_DNS_DOMAIN=tunnel.example.com
+      - HIVE_C2_ICMP_TARGET=8.8.8.8
+      - OLLAMA_URL=http://ollama:11434
+      - RUST_LOG=info,queen=debug
+    volumes:
+      - hive_arena:/dev/shm
+      - ../../target/release:/hive/bin
+    command: /hive/bin/queen
+
+  # ── Worker (scout + profiling) ──
+  worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: hive-worker
+    hostname: hive-worker
+    depends_on: [queen, arena]
+    networks: [hive-net]
+    environment:
+      - __HIVE_ARENA=hive_arena
+      - HIVE_LAB_MODE=1
+      - HIVE_C2_URL=http://c2-server:8444/collect
+      - RUST_LOG=info
+    volumes:
+      - hive_arena:/dev/shm
+      - ../../target/release:/hive/bin
+    command: /hive/bin/worker
+
+  # ── Drone (propagación SSH) ──
+  drone:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: hive-drone
+    hostname: hive-drone
+    depends_on: [queen, arena]
+    networks: [hive-net]
+    environment:
+      - __HIVE_ARENA=hive_arena
+      - HIVE_LAB_MODE=1
+      - HIVE_C2_URL=http://c2-server:8444/collect
+      - RUST_LOG=info
+    volumes:
+      - hive_arena:/dev/shm
+      - ../../target/release:/hive/bin
+      - target_keys:/root/.ssh:ro
+    command: /hive/bin/drone
+
+  # ── Swarm (worm autónomo) ──
+  swarm:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: hive-swarm
+    hostname: hive-swarm
+    depends_on: [queen, arena]
+    networks: [hive-net]
+    environment:
+      - __HIVE_ARENA=hive_arena
+      - HIVE_LAB_MODE=1
+      - HIVE_C2_URL=http://c2-server:8444/collect
+      - HIVE_SCAN_SUBNET=172.22.0.0/24
+      - RUST_LOG=info
+    volumes:
+      - hive_arena:/dev/shm
+      - ../../target/release:/hive/bin
+      - target_keys:/root/.ssh:ro
+    command: /hive/bin/swarm
+
+  # ── Honeybee (exfiltración) ──
+  honeybee:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: hive-honeybee
+    hostname: hive-honeybee
+    depends_on: [queen, c2-server, arena]
+    networks: [hive-net]
+    environment:
+      - __HIVE_ARENA=hive_arena
+      - HIVE_LAB_MODE=1
+      - HIVE_TELEMETRY_DIR=/tmp/hive_telemetry
+      - HIVE_C2_URL=http://c2-server:8444/collect
+      - HIVE_C2_DNS_DOMAIN=tunnel.example.com
+      - HIVE_C2_ICMP_TARGET=8.8.8.8
+      - HIVE_EXEC_TIMEOUT=30
+      - RUST_LOG=info
+    volumes:
+      - hive_arena:/dev/shm
+      - ../../target/release:/hive/bin
+    command: /hive/bin/honeybee
+
+  # ── Weaver (polimorfismo) ──
+  weaver:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: hive-weaver
+    hostname: hive-weaver
+    depends_on: [queen, arena]
+    networks: [hive-net]
+    environment:
+      - __HIVE_ARENA=hive_arena
+      - HIVE_LAB_MODE=1
+      - HIVE_C2_URL=http://c2-server:8444/collect
+      - WEAVER_OUTPUT_DIR=/tmp/hive_variants
+      - RUST_LOG=info
+    volumes:
+      - hive_arena:/dev/shm
+      - ../../target/release:/hive/bin
+    command: /hive/bin/weaver
+
+  # ── Ollama (LLM estratégico) ──
+  ollama:
+    image: ollama/ollama:latest
+    container_name: hive-ollama
+    hostname: ollama
+    networks: [hive-net]
+    ports: ["11435:11434"]
+    volumes:
+      - ollama_data:/root/.ollama
+    entrypoint: >
+      sh -c "
+      ollama serve &
+      sleep 3 &&
+      (ollama pull tinyllama 2>/dev/null || true) &&
+      tail -f /dev/null
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:11434/api/tags"]
+      interval: 10s
+      retries: 20
+
+  # ── Monitor ──
+  monitor:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: hive-monitor
+    hostname: hive-monitor
+    depends_on: [c2-server, arena]
+    networks: [hive-net]
+    volumes:
+      - hive_arena:/dev/shm
+      - ../../target/release:/hive/bin
+    command: python3 /hive/tests/monitor_detections.py --watch --interval 10
+
+  # ── Dashboard ──
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: hive-dashboard
+    hostname: hive-dashboard
+    depends_on: [c2-server]
+    networks: [hive-net]
+    ports: ["8080:8080"]
+    volumes:
+      - /tmp:/tmp
+      - /var/log:/var/log:ro
+    command: python3 /hive/tests/dashboard.py --port 8080 --host 0.0.0.0
+
+networks:
+  hive-net:
+    driver: bridge
+
+volumes:
+  hive_arena:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+  ollama_data:
+  target_keys:

@@ -68,13 +68,11 @@ mod platform {
                 (fd, true, "(anonymous)".to_string())
             };
 
-            // Set size
-            if owned {
-                let rc = unsafe { libc::ftruncate64(fd, size as i64) };
-                if rc == -1 {
-                    let _ = unsafe { libc::close(fd) };
-                    return Err(io::Error::last_os_error());
-                }
+            // Set size (always truncate to correct size, even if not owner)
+            let rc = unsafe { libc::ftruncate64(fd, size as i64) };
+            if rc == -1 {
+                let _ = unsafe { libc::close(fd) };
+                return Err(io::Error::last_os_error());
             }
 
             // Map
@@ -95,9 +93,8 @@ mod platform {
             }
 
             // Lock into RAM to avoid paging (anti-forensics)
-            unsafe {
-                libc::mlock(ptr, size);
-            }
+            // Ignore failure (no CAP_IPC_LOCK in containers)
+            let _ = unsafe { libc::mlock(ptr, size) };
 
             Ok(Self {
                 ptr: ptr as *mut u8,

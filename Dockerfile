@@ -2,8 +2,9 @@
 FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl3 libssl-dev ca-certificates openssh-client curl python3 python3-pip \
-    iputils-ping dnsutils netcat-openbsd \
+    libssl3 libssl-dev ca-certificates openssh-client openssh-server sshpass \
+    curl python3 python3-pip \
+    iputils-ping dnsutils netcat-openbsd nmap \
     && rm -rf /var/lib/apt/lists/* && \
     pip3 install --no-cache-dir --break-system-packages flask requests
 

