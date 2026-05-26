@@ -1,8 +1,8 @@
 # Agent Reference
 
-## Scout ◈ — Reconnaissance
+## Worker ◈ — Reconnaissance
 
-**File:** `agents/scout/src/main.rs`
+**File:** `agents/worker/src/main.rs`
 **Role:** Perception
 
 ### Capabilities
@@ -33,9 +33,9 @@ edr_processes = ["csfalcon", "csagent", "msmpeng", "sentinelone", "carbonblack",
 
 ---
 
-## Shaper ◆ — Decision & Lateral Movement
+## Drone ◆ — Decision & Lateral Movement
 
-**File:** `agents/shaper/src/main.rs`
+**File:** `agents/drone/src/main.rs`
 **Role:** Decision-making, lateral propagation, agent regeneration
 
 ### Capabilities
@@ -75,9 +75,9 @@ max_concurrent_infections = 5
 
 ---
 
-## Hoarder ◉ — Action Execution
+## Honeybee ◉ — Action Execution
 
-**File:** `agents/hoarder/src/main.rs`
+**File:** `agents/honeybee/src/main.rs`
 **Role:** Destructive actions, data exfiltration
 
 ### Capabilities
@@ -139,9 +139,9 @@ api_key = ""
 
 ---
 
-## Overmind ◇ — Strategic Oracle & C2 Bridge
+## Queen ◇ — Strategic Oracle & C2 Bridge
 
-**File:** `agents/overmind/src/main.rs`
+**File:** `agents/queen/src/main.rs`
 **Role:** LLM integration, external C2 bridging
 
 ### Capabilities
@@ -172,9 +172,9 @@ api_key = ""
 
 ---
 
-## Worm ⬡ — Autonomous Propagation
+## Swarm ⬡ — Autonomous Propagation
 
-**File:** `agents/worm/src/main.rs`
+**File:** `agents/swarm/src/main.rs`
 **Role:** Self-spreading, no-consensus infection
 
 ### Capabilities
