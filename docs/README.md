@@ -1,7 +1,7 @@
 # Hive Colony — Multi-Agent Autonomous Swarm Framework
 
 ```
- __                  .' '.
+                     .' '.
         _/__)        .   .       .
        (8|)_}}- .      .        .
         `\__)    '. . ' ' .  . '
